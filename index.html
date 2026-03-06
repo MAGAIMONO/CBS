@@ -1091,7 +1091,7 @@
 
                 if (['box', 'inv-slope', 'cylinder', 'jumper'].includes(bBaseType)) {
                     if (bBaseType === 'jumper') {
-                        studs.push({ x: bPos.x, y: bPos.y + bH, z: bPos.z });
+                        studs.push({ x: bPos.x, y: bPos.y + bH, z: bPos.z, type: bType, shape: bShape });
                     } else {
                         const rot = Math.round(bRot / (Math.PI / 2)) % 2 !== 0;
                         const w = rot ? bShape.d : bShape.w;
@@ -1101,7 +1101,9 @@
                                 studs.push({
                                     x: bPos.x + (i - (w - 1) / 2),
                                     y: bPos.y + bH,
-                                    z: bPos.z + (j - (d - 1) / 2)
+                                    z: bPos.z + (j - (d - 1) / 2),
+                                    type: bType,
+                                    shape: bShape
                                 });
                             }
                         }
@@ -1496,35 +1498,63 @@
                 let pt = hit.point.clone();
                 if (hit.object !== heightGuide) pt.add(hit.face.normal.clone().multiplyScalar(0.5));
 
+                // --- 1. Identify Context & Anchor ---
+                const currentY = Math.max(currentHeight, Math.round(pt.y - 0.5));
+                let snAnchor = new THREE.Vector3(0, 0, 0);
+                let isBaseSpecial = false;
+                let baseBlock = null;
+
+                if (hit.object !== heightGuide) {
+                    let obj = hit.object;
+                    while (obj && obj.parent !== blocksContainer) obj = obj.parent;
+                    baseBlock = obj;
+
+                    if (baseBlock) {
+                        const bType = baseBlock.userData.type.replace('-h2', '');
+                        const bShape = baseBlock.userData.shape;
+                        const is1Stud = (bType === 'jumper' || (bShape.w === 1 && bShape.d === 1));
+                        const isFlat = (bType === 'flat');
+
+                        if (is1Stud || isFlat) {
+                            isBaseSpecial = true;
+                            snAnchor.copy(baseBlock.position);
+                        }
+                    }
+                }
+
+                // --- 2. Calculate Snap Position ---
                 const snap = isHalfSnap ? 0.5 : 1.0;
                 const rot = (rotationAngle / 90) % 2 !== 0;
                 const eW = rot ? selectedShape.d : selectedShape.w;
                 const eD = rot ? selectedShape.w : selectedShape.d;
 
-                // --- Advanced Fitting Logic ---
-                const studs = getStudsInWorld();
-                const currentY = Math.max(currentHeight, Math.round(pt.y - 0.5));
+                let candidatePos;
+                if (isBaseSpecial) {
+                    // RELATIVE SNAP: Origin is the supporting block/stud
+                    candidatePos = new THREE.Vector3(
+                        snAnchor.x + Math.round((pt.x - snAnchor.x) / snap) * snap,
+                        currentY,
+                        snAnchor.z + Math.round((pt.z - snAnchor.z) / snap) * snap
+                    );
+                } else {
+                    // WORLD GRID SNAP: Origin is world 0,0,0 (with parity offset)
+                    const off = (v, s) => { const c = (s % 2 === 0) ? 0 : 0.5; return Math.round((v - c) / snap) * snap + c; };
+                    candidatePos = new THREE.Vector3(off(pt.x, eW), currentY, off(pt.z, eD));
+                }
 
-                // Try aligning ghost holes with nearby studs
+                // --- 3. Optional Multi-Stud Alignment (Hole-to-Stud) ---
                 let bestPos = null;
                 let minDist = 0.8;
-
-                // Preliminary Snapping (Standard Grid)
-                const off = (v, s) => { const c = (s % 2 === 0) ? 0 : 0.5; return Math.round((v - c) / snap) * snap + c; };
-                let candidatePos = new THREE.Vector3(off(pt.x, eW), currentY, off(pt.z, eD));
+                const studs = getStudsInWorld();
 
                 studs.filter(s => Math.abs(s.y - (currentY - 0.5)) < 0.1).forEach(s => {
-                    const r = Math.round(THREE.MathUtils.degToRad(rotationAngle) / (Math.PI / 2)) % 2 !== 0;
-                    const w = r ? selectedShape.d : selectedShape.w;
-                    const d = r ? selectedShape.w : selectedShape.d;
-
-                    for (let i = 0; i < w; i++) {
-                        for (let j = 0; j < d; j++) {
-                            const testPosX = s.x - (i - (w - 1) / 2);
-                            const testPosZ = s.z - (j - (d - 1) / 2);
-                            const dist = Math.sqrt((testPosX - pt.x) ** 2 + (testPosZ - pt.z) ** 2);
-                            if (dist < minDist) {
-                                minDist = dist;
+                    for (let i = 0; i < eW; i++) {
+                        for (let j = 0; j < eD; j++) {
+                            const testPosX = s.x - (i - (eW - 1) / 2);
+                            const testPosZ = s.z - (j - (eD - 1) / 2);
+                            const dSq = (testPosX - pt.x) ** 2 + (testPosZ - pt.z) ** 2;
+                            if (dSq < minDist * minDist) {
+                                minDist = Math.sqrt(dSq);
                                 bestPos = new THREE.Vector3(testPosX, currentY, testPosZ);
                             }
                         }
@@ -1533,7 +1563,7 @@
 
                 ghostBlock.position.copy(bestPos || candidatePos);
 
-                // --- Validation ---
+                // --- 4. Validation (Stud Illegal & AABB Collision) ---
                 const holes = getHolesInWorld(ghostBlock.position, ghostBlock.rotation.y, selectedShape, selectedType);
                 const relevantStuds = studs.filter(s => Math.abs(s.y - (ghostBlock.position.y - 0.5)) < 0.1);
 
@@ -1542,11 +1572,34 @@
                     relevantStuds.forEach(stud => {
                         const dx = Math.abs(hole.x - stud.x);
                         const dz = Math.abs(hole.z - stud.z);
-                        if (dx < 0.8 && dz < 0.8 && (dx > 0.1 || dz > 0.1)) isIllegal = true;
+                        if (dx < 0.8 && dz < 0.8) {
+                            // If base is NOT special, we require strict alignment (>0.1 dev is illegal)
+                            if (!isBaseSpecial && (dx > 0.1 || dz > 0.1)) isIllegal = true;
+                        }
                     });
                 });
 
-                canPlace = !isIllegal;
+                let isCollision = false;
+                const gBody = ghostBlock.children[0];
+                const gB = new THREE.Box3().setFromObject(gBody);
+                gB.expandByScalar(-0.05);
+
+                const visibleBlocks = blocksContainer.children.filter(b => b.visible);
+                for (let i = 0; i < visibleBlocks.length; i++) {
+                    const targetB = visibleBlocks[i];
+                    if (targetB === ghostBlock) continue;
+
+                    const tBody = targetB.children[0];
+                    const tB = new THREE.Box3().setFromObject(tBody);
+                    tB.expandByScalar(-0.05);
+
+                    if (gB.intersectsBox(tB)) {
+                        isCollision = true;
+                        break;
+                    }
+                }
+
+                canPlace = !isIllegal && !isCollision;
                 ghostBlock.traverse(child => {
                     if (child.isMesh) {
                         child.material.color.set(canPlace ? selectedColor : 0xff4d4d);
