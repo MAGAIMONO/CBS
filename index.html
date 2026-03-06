@@ -1,0 +1,1618 @@
+<!DOCTYPE html>
+<html lang="ja">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ChicchanaBlockSimulator</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600&family=Outfit:wght@300;700&display=swap"
+        rel="stylesheet">
+    <style>
+        :root {
+            --glass-bg: rgba(20, 20, 25, 0.85);
+            --glass-border: rgba(255, 255, 255, 0.1);
+            --accent: #00d2ff;
+            --accent-glow: rgba(0, 210, 255, 0.3);
+            --text: #ffffff;
+            --text-muted: rgba(255, 255, 255, 0.5);
+            --font-main: 'Inter', sans-serif;
+            --font-title: 'Outfit', sans-serif;
+            --panel-shadow: 0 12px 40px rgba(0, 0, 0, 0.6);
+        }
+
+        html,
+        body,
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+            user-select: none;
+            -webkit-user-select: none;
+            -moz-user-select: none;
+            -ms-user-select: none;
+            -o-user-select: none;
+            /* Added for completeness */
+        }
+
+        body {
+            overflow: hidden;
+            background-color: #050507;
+            color: var(--text);
+            font-family: var(--font-main);
+        }
+
+        #ui-container {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            pointer-events: none;
+            z-index: 10;
+            display: flex;
+            flex-direction: column;
+        }
+
+        /* Top Header */
+        header {
+            padding: 1.5rem 2rem;
+            pointer-events: auto;
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-start;
+        }
+
+        header h1 {
+            font-family: var(--font-title);
+            font-size: 1.8rem;
+            font-weight: 700;
+            letter-spacing: -0.5px;
+            color: var(--accent);
+            text-shadow: 0 0 20px var(--accent-glow);
+        }
+
+        header p {
+            font-size: 0.8rem;
+            opacity: 0.6;
+            margin-top: 0.2rem;
+        }
+
+        /* Bottom Control System */
+        #bottom-controls {
+            margin-top: auto;
+            padding: 1.5rem;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 1rem;
+            pointer-events: none;
+            /* Let clicks pass through empty space */
+            /* Removed pointer-events: none; from container to allow children to be interactive */
+        }
+
+        .glass-panel {
+            pointer-events: auto;
+            /* Catch clicks only on panels */
+            background: var(--glass-bg);
+            backdrop-filter: blur(20px);
+            -webkit-backdrop-filter: blur(20px);
+            border: 1px solid var(--glass-border);
+            border-radius: 20px;
+            box-shadow: var(--panel-shadow);
+        }
+
+        /* Main Build Panel (Top Row) */
+        #build-panel {
+            display: flex;
+            align-items: stretch;
+            gap: 1.5rem;
+            padding: 1rem 1.5rem;
+            max-width: 95vw;
+            flex-wrap: wrap;
+            justify-content: center;
+        }
+
+        .control-group {
+            display: flex;
+            flex-direction: column;
+            gap: 0.6rem;
+        }
+
+        .group-label {
+            font-size: 0.65rem;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            color: var(--text-muted);
+        }
+
+        /* Palette */
+        .palette-container {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            flex-wrap: wrap;
+            max-width: 320px;
+        }
+
+        .color-swatch {
+            width: 28px;
+            height: 28px;
+            border-radius: 8px;
+            cursor: pointer;
+            border: 2px solid transparent;
+            transition: all 0.2s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+            position: relative;
+        }
+
+        .color-swatch:hover {
+            transform: translateY(-3px) scale(1.1);
+        }
+
+        .color-swatch.active {
+            border-color: #fff;
+            box-shadow: 0 0 15px rgba(255, 255, 255, 0.3);
+            transform: scale(1.1);
+        }
+
+        .color-swatch .remove-btn {
+            position: absolute;
+            top: -5px;
+            right: -5px;
+            width: 14px;
+            height: 14px;
+            background: #ff4d4d;
+            color: white;
+            border-radius: 50%;
+            display: none;
+            align-items: center;
+            justify-content: center;
+            font-size: 10px;
+            font-weight: bold;
+        }
+
+        .color-swatch:hover .remove-btn {
+            display: flex;
+        }
+
+        #btn-add-color {
+            width: 28px;
+            height: 28px;
+            border-radius: 8px;
+            border: 2px dashed var(--glass-border);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            font-size: 1.2rem;
+            color: var(--text-muted);
+            transition: all 0.2s;
+        }
+
+        #btn-add-color:hover {
+            border-color: var(--accent);
+            color: var(--accent);
+        }
+
+        #custom-color-input {
+            position: absolute;
+            visibility: hidden;
+        }
+
+        /* Shapes Grid */
+        .shapes-grid {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 0.4rem;
+        }
+
+        .shape-btn {
+            padding: 0.4rem 0.6rem;
+            background: rgba(255, 255, 255, 0.05);
+            border: 1px solid var(--glass-border);
+            border-radius: 6px;
+            font-size: 0.75rem;
+            cursor: pointer;
+            transition: all 0.2s;
+            color: var(--text);
+            text-align: center;
+        }
+
+        .shape-btn:hover {
+            background: rgba(255, 255, 255, 0.1);
+            border-color: rgba(255, 255, 255, 0.3);
+        }
+
+        .shape-btn.active {
+            background: var(--accent);
+            border-color: var(--accent);
+            color: #000;
+            font-weight: 700;
+            box-shadow: 0 0 15px var(--accent-glow);
+        }
+
+        /* Custom / Height Controls */
+        .numeric-input {
+            width: 45px;
+            background: rgba(0, 0, 0, 0.3);
+            border: 1px solid var(--glass-border);
+            color: #fff;
+            border-radius: 6px;
+            padding: 4px;
+            font-size: 0.8rem;
+            text-align: center;
+            outline: none;
+        }
+
+        select {
+            background: rgba(0, 0, 0, 0.3);
+            border: 1px solid var(--glass-border);
+            color: #fff;
+            border-radius: 6px;
+            padding: 4px 8px;
+            font-size: 0.8rem;
+            outline: none;
+            cursor: pointer;
+        }
+
+        .height-controls {
+            display: flex;
+            align-items: center;
+            gap: 0.8rem;
+            background: rgba(0, 0, 0, 0.2);
+            border-radius: 12px;
+            padding: 4px 10px;
+            border: 1px solid var(--glass-border);
+        }
+
+        .h-btn {
+            background: none;
+            border: none;
+            color: #fff;
+            font-size: 1.2rem;
+            font-weight: bold;
+            cursor: pointer;
+            padding: 0 5px;
+            opacity: 0.7;
+            transition: opacity 0.2s;
+        }
+
+        .h-btn:hover {
+            opacity: 1;
+            color: var(--accent);
+        }
+
+        #label-h {
+            font-size: 0.9rem;
+            font-weight: 700;
+            color: var(--accent);
+            min-width: 40px;
+            text-align: center;
+        }
+
+        /* System Action Panel (Bottom Row) */
+        #system-panel {
+            display: flex;
+            align-items: center;
+            gap: 0.8rem;
+            padding: 0.6rem 1.2rem;
+            border-radius: 30px;
+        }
+
+        .action-btn {
+            background: rgba(255, 255, 255, 0.05);
+            border: 1px solid var(--glass-border);
+            color: #fff;
+            padding: 0.5rem 1rem;
+            border-radius: 20px;
+            font-size: 0.8rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+
+        .action-btn:hover {
+            background: var(--accent);
+            color: #000;
+            border-color: var(--accent);
+            box-shadow: 0 0 15px var(--accent-glow);
+        }
+
+        .action-btn.danger:hover {
+            background: #ff4d4d;
+            border-color: #ff4d4d;
+            box-shadow: 0 0 15px rgba(255, 77, 77, 0.4);
+        }
+
+        .action-btn.success {
+            background: rgba(112, 224, 0, 0.1);
+            border-color: rgba(112, 224, 0, 0.3);
+            color: #afff60;
+        }
+
+        .action-btn.success:hover {
+            background: #70e000;
+            color: #000;
+            border-color: #70e000;
+        }
+
+        .divider {
+            width: 1px;
+            height: 20px;
+            background: var(--glass-border);
+            margin: 0 5px;
+        }
+
+        /* Tooltip-like Instructions */
+        #instructions {
+            position: absolute;
+            top: 1.5rem;
+            right: 1.5rem;
+            padding: 1.2rem;
+            max-width: 220px;
+            font-size: 0.75rem;
+            line-height: 1.6;
+            opacity: 0.8;
+            transition: opacity 0.3s;
+        }
+
+        #instructions:hover {
+            opacity: 1;
+        }
+
+        #instructions ul {
+            list-style: none;
+        }
+
+        #instructions li {
+            margin-bottom: 0.3rem;
+            display: flex;
+            justify-content: space-between;
+        }
+
+        #instructions strong {
+            color: var(--accent);
+        }
+
+        #file-input {
+            display: none;
+        }
+
+        #view-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            pointer-events: none;
+            display: none;
+            flex-direction: column;
+            align-items: center;
+            justify-content: flex-end;
+            padding-bottom: 50px;
+            z-index: 2000;
+            background: radial-gradient(circle at center, transparent 0%, rgba(0, 0, 0, 0.4) 100%);
+        }
+
+        #btn-exit-view {
+            pointer-events: auto;
+            background: var(--accent);
+            color: #000;
+            border: none;
+            padding: 12px 24px;
+            border-radius: 30px;
+            font-weight: bold;
+            cursor: pointer;
+            box-shadow: 0 0 20px var(--accent-glow);
+            transition: transform 0.2s;
+        }
+
+        #btn-exit-view:hover {
+            transform: scale(1.05);
+        }
+
+        #bulk-move-overlay {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            pointer-events: none;
+            display: none;
+            flex-direction: column;
+            align-items: center;
+            justify-content: flex-end;
+            padding-bottom: 50px;
+            z-index: 2500;
+        }
+
+        .accent-btn {
+            pointer-events: auto;
+            background: var(--accent);
+            color: #000;
+            border: none;
+            padding: 12px 24px;
+            border-radius: 30px;
+            font-weight: bold;
+            cursor: pointer;
+            box-shadow: 0 0 20px var(--accent-glow);
+            transition: transform 0.2s;
+        }
+
+        .accent-btn:hover {
+            transform: scale(1.05);
+        }
+
+        .range-input {
+            width: 100%;
+            height: 4px;
+            background: rgba(255, 255, 255, 0.1);
+            border-radius: 2px;
+            outline: none;
+            accent-color: var(--accent);
+            cursor: pointer;
+        }
+
+        /* Modal Settings */
+        .modal-overlay {
+            position: fixed;
+            bottom: 100px;
+            left: 50%;
+            transform: translateX(-50%);
+            width: auto;
+            height: auto;
+            background: none;
+            backdrop-filter: none;
+            display: none;
+            align-items: center;
+            justify-content: center;
+            z-index: 3000;
+            pointer-events: none;
+        }
+
+        .modal-content {
+            width: 320px;
+            padding: 1.5rem;
+            display: flex;
+            flex-direction: column;
+            gap: 1.2rem;
+            pointer-events: auto;
+            border-radius: 20px;
+            box-shadow: 0 10px 40px rgba(0, 0, 0, 0.8);
+        }
+
+        .modal-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .modal-header h2 {
+            font-family: var(--font-title);
+            font-size: 1.2rem;
+            color: var(--accent);
+        }
+
+        .close-modal {
+            background: none;
+            border: none;
+            color: #fff;
+            font-size: 1.5rem;
+            cursor: pointer;
+            opacity: 0.5;
+        }
+
+        /* Context Menu */
+        #context-menu {
+            position: fixed;
+            background: var(--glass-bg);
+            backdrop-filter: blur(15px);
+            border: 1px solid var(--glass-border);
+            border-radius: 10px;
+            padding: 5px 0;
+            min-width: 140px;
+            display: none;
+            z-index: 4000;
+            box-shadow: var(--panel-shadow);
+            pointer-events: auto;
+        }
+
+        .menu-item {
+            padding: 10px 15px;
+            font-size: 0.8rem;
+            cursor: pointer;
+            transition: background 0.2s;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .menu-item:hover {
+            background: rgba(255, 255, 255, 0.1);
+            color: var(--accent);
+        }
+
+        .menu-item.danger:hover {
+            color: #ff4d4d;
+        }
+    </style>
+</head>
+
+<body>
+    <div id="ui-container">
+        <header>
+            <div>
+                <h1>ChicchanaBlockSimulator</h1>
+                <p>3D空間でブロックを自由に組み立てよう</p>
+            </div>
+        </header>
+
+        <div id="instructions" class="glass-panel">
+            <ul>
+                <li><span>ブロック配置</span><strong>左クリック</strong></li>
+                <li><span>ブロック削除</span><strong>右クリック</strong></li>
+                <li><span>90度回転</span><strong>R キー</strong></li>
+                <li><span>高さを上下</span><strong>Q / E Key</strong></li>
+                <li><span>視点回転</span><strong>ドラッグ</strong></li>
+                <li><span>ズーム</span><strong>スクロール</strong></li>
+            </ul>
+        </div>
+
+        <div id="bottom-controls">
+            <div id="build-panel" class="glass-panel">
+                <div class="control-group">
+                    <div class="group-label">パレット</div>
+                    <div class="color-palette palette-container">
+                        <div id="btn-add-color" title="現在の選択色を追加">+</div>
+                        <input type="color" id="custom-color-input">
+                    </div>
+                    <label
+                        style="font-size:0.65rem; opacity:0.7; cursor:pointer; display:flex; align-items:center; gap:5px; margin-top:5px;">
+                        <input type="checkbox" id="check-clear"> クリアパーツ (透過)
+                    </label>
+                </div>
+                <div class="divider"></div>
+                <div class="control-group">
+                    <div class="group-label">形状プリセット</div>
+                    <div class="shapes-grid"></div>
+                </div>
+                <div class="divider"></div>
+                <div class="control-group">
+                    <div class="group-label">カスタム & 種類</div>
+                    <div style="display:flex; gap:0.5rem; align-items:center;">
+                        <span style="font-size:0.7rem; opacity:0.6;">W</span><input type="number" id="input-w"
+                            class="numeric-input" value="1" min="1" max="10">
+                        <span style="font-size:0.7rem; opacity:0.6;">D</span><input type="number" id="input-d"
+                            class="numeric-input" value="1" min="1" max="10">
+                    </div>
+                    <select id="select-type">
+                        <option value="box">通常ブロック</option>
+                        <option value="slope">スロープ (順)</option>
+                        <option value="slope-h2">スロープ (順・高)</option>
+                        <option value="inv-slope">スロープ (逆)</option>
+                        <option value="inv-slope-h2">スロープ (逆・高)</option>
+                        <option value="cylinder">円柱</option>
+                        <option value="jumper">ジャンパー (1点)</option>
+                        <option value="flat">フラット (ポッチなし)</option>
+                    </select>
+                </div>
+                <div class="divider"></div>
+                <div class="control-group">
+                    <div class="group-label">高さ & スナップ</div>
+                    <div class="height-controls">
+                        <button class="h-btn" id="btn-h-down">−</button>
+                        <span id="label-h">H: 0</span>
+                        <button class="h-btn" id="btn-h-up">+</button>
+                    </div>
+                    <label
+                        style="font-size:0.65rem; opacity:0.7; cursor:pointer; display:flex; align-items:center; gap:5px; margin-top:2px;">
+                        <input type="checkbox" id="check-half-snap"> ハーフスナップ (0.5)
+                    </label>
+                </div>
+            </div>
+
+            <div id="system-panel" class="glass-panel">
+                <button class="action-btn" id="btn-rotate">90度回転 (R)</button>
+                <button class="action-btn" id="btn-open-layers">レイヤー設定</button>
+                <button class="action-btn" id="btn-open-lighting">ライティング設定</button>
+                <button class="action-btn" id="btn-open-project">保存・読込</button>
+                <div class="divider"></div>
+                <button class="action-btn danger" id="btn-clear">全クリア</button>
+                <button class="action-btn accent" id="btn-view-mode"
+                    style="background: var(--accent); color: #000;">鑑賞モード</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- View Mode Overlay -->
+    <div id="view-overlay">
+        <button id="btn-exit-view">鑑賞モードを終了</button>
+    </div>
+
+    <!-- Bulk Move Overlay -->
+    <div id="bulk-move-overlay">
+        <div
+            style="background: rgba(0,0,0,0.6); padding: 15px 30px; border-radius: 40px; border: 1px solid var(--accent); display: flex; flex-direction: column; align-items: center; gap: 10px; margin-bottom: 30px;">
+            <p style="font-weight: bold; color: var(--accent);">一括移動モード実行中</p>
+            <p style="font-size: 0.75rem; opacity: 0.8;">H 以上のブロックをドラッグして水平移動できます</p>
+        </div>
+        <button id="btn-exit-bulk-move" class="accent-btn">一括移動を終了</button>
+    </div>
+
+    <!-- Lighting Modal -->
+    <div id="modal-lighting" class="modal-overlay">
+        <div class="modal-content glass-panel">
+            <div class="modal-header">
+                <h2>ライティング設定</h2>
+                <button class="close-modal" id="btn-close-lighting">&times;</button>
+            </div>
+            <div class="control-group">
+                <div class="group-label">プリセット</div>
+                <select id="select-lighting" style="width: 100%;">
+                    <option value="studio">スタジオ</option>
+                    <option value="outdoor">屋外 (昼)</option>
+                    <option value="night">ナイトモード</option>
+                    <option value="none">なし (明るい部屋)</option>
+                </select>
+            </div>
+            <div class="control-group">
+                <div style="display: flex; justify-content: space-between; align-items: center;">
+                    <div class="group-label">ライトの明るさ</div>
+                    <span id="label-light-intensity" style="font-size: 0.82rem; color: var(--accent);">100%</span>
+                </div>
+                <input type="range" id="input-light-intensity" class="range-input" min="0" max="200" value="100">
+            </div>
+            <div class="control-group">
+                <div style="display: flex; justify-content: space-between; align-items: center;">
+                    <div class="group-label">ライト角度</div>
+                    <span id="label-light-angle" style="font-size: 0.82rem; color: var(--accent);">45°</span>
+                </div>
+                <input type="range" id="input-light-angle" class="range-input" min="0" max="360" value="45">
+            </div>
+        </div>
+    </div>
+
+    <!-- Layer Modal -->
+    <div id="modal-layers" class="modal-overlay">
+        <div class="modal-content glass-panel">
+            <div class="modal-header">
+                <h2>レイヤー設定</h2>
+                <button class="close-modal" id="btn-close-layers">&times;</button>
+            </div>
+            <div class="control-group">
+                <label style="font-size:0.8rem; cursor:pointer; display:flex; align-items:center; gap:10px;">
+                    <input type="checkbox" id="check-layer-mode"> <strong>レイヤー編集モード</strong>
+                </label>
+                <p style="font-size:0.7rem; opacity:0.6;">現在の高さ (H) より上を非表示にします</p>
+            </div>
+
+            <div class="divider" style="width:100%; height:1px; margin:5px 0;"></div>
+
+            <div class="control-group">
+                <div class="group-label">一括操作 (H以上)</div>
+                <button class="action-btn accent" id="btn-start-bulk-move"
+                    style="background: var(--accent); color: #000; width: 100%;">
+                    一括移動を開始
+                </button>
+                <p style="font-size:0.7rem; opacity:0.6;">H以上のブロックをまとめてドラッグで動かせます</p>
+            </div>
+            <div class="divider" style="width:100%; height:1px; margin:5px 0;"></div>
+            <div class="control-group">
+                <div class="group-label">レイヤー操作</div>
+                <div style="display:grid; grid-template-columns: 1fr 1fr; gap:10px;">
+                    <button class="action-btn" id="btn-layer-insert">レイヤー挿入</button>
+                    <button class="action-btn danger" id="btn-layer-delete">レイヤー削除</button>
+                </div>
+                <p style="font-size:0.7rem; opacity:0.6;">現在の高さ(H)を基準に全体を移動します</p>
+            </div>
+        </div>
+    </div>
+
+    <!-- Project Modal -->
+    <div id="modal-project" class="modal-overlay">
+        <div class="modal-content glass-panel">
+            <div class="modal-header">
+                <h2>保存・読込</h2>
+                <button class="close-modal" id="btn-close-project">&times;</button>
+            </div>
+            <div class="control-group">
+                <div class="group-label">プロジェクト管理</div>
+                <div style="display:grid; grid-template-columns: 1fr 1fr; gap:10px;">
+                    <button class="action-btn" id="btn-save">保存 (.json)</button>
+                    <button class="action-btn" id="btn-load">読込 (.json)</button>
+                </div>
+                <button class="action-btn danger" id="btn-new-project"
+                    style="margin-top:10px; width:100%;">新規作成（リセット）</button>
+                <input type="file" id="file-input" accept=".json" style="display:none;">
+            </div>
+            <div class="divider" style="width:100%; height:1px; margin:5px 0;"></div>
+            <div class="control-group">
+                <div class="group-label">書き出し</div>
+                <div style="display:grid; grid-template-columns: 1fr 1fr; gap:10px;">
+                    <button class="action-btn" id="btn-screenshot">スクショ</button>
+                    <button class="action-btn success" id="btn-export">3D保存 (.glb)</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Context Menu -->
+    <div id="context-menu">
+        <div class="menu-item" id="menu-change-color">🎨 色を変更 (一括)</div>
+        <div class="menu-item danger" id="menu-remove-color">🗑️ この色を削除</div>
+    </div>
+    <input type="color" id="change-color-input" style="display:none;">
+
+    <script src="https://unpkg.com/three@0.146.0/build/three.min.js"></script>
+    <script src="https://unpkg.com/three@0.146.0/examples/js/controls/OrbitControls.js"></script>
+    <script src="https://unpkg.com/three@0.146.0/examples/js/exporters/GLTFExporter.js"></script>
+
+    <script>
+        const GRID_SIZE = 20;
+        const GRID_DIVISIONS = 20;
+        const BLOCK_SIZE = 1;
+        const DEFAULT_COLORS = ['#ffffff', '#1a1a1a', '#e63946', '#457b9d', '#70e000', '#ffb703', '#8338ec', '#fb5607'];
+        const SHAPES = [
+            { id: '1x1', w: 1, d: 1 }, { id: '1x2', w: 1, d: 2 }, { id: '1x3', w: 1, d: 3 }, { id: '1x4', w: 1, d: 4 },
+            { id: '2x2', w: 2, d: 2 }, { id: '2x3', w: 2, d: 3 }, { id: '2x4', w: 2, d: 4 }, { id: 'カスタム', w: -1, d: -1 }
+        ];
+
+        let scene, camera, renderer, controls;
+        let blocksContainer, ghostBlock, heightGuide;
+        let raycaster, mouse;
+        let ambientLight, sunLight;
+        let nightLights = [];
+        let isViewMode = false;
+        let lightAngle = 45;
+        let lightIntensity = 1.0;
+        let currentLightingPreset = 'studio';
+        let isLayerEditMode = false;
+        let isBulkMoveMode = false;
+        let isDraggingBulk = false;
+        let bulkDragStartPoint = new THREE.Vector3();
+        let targetBulkBlocks = [];
+        let initialBulkPositions = [];
+        let savedCameraPos = new THREE.Vector3();
+        let savedCameraTarget = new THREE.Vector3();
+        let savedLayerMode = false;
+
+        // Context Menu State
+        let contextMenuColor = null;
+        function showContextMenu(x, y, color) {
+            contextMenuColor = color;
+            const menu = document.getElementById('context-menu');
+            if (menu) {
+                menu.style.display = 'block';
+                menu.style.left = `${x}px`;
+                menu.style.top = `${y}px`;
+            }
+        }
+        function hideContextMenu() {
+            const menu = document.getElementById('context-menu');
+            if (menu) menu.style.display = 'none';
+        }
+
+        function toggleViewMode(active) {
+            isViewMode = active;
+            document.getElementById('view-overlay').style.display = active ? 'flex' : 'none';
+            document.getElementById('bottom-controls').style.display = active ? 'none' : 'flex';
+            document.getElementById('instructions').style.display = active ? 'none' : 'block';
+
+            ghostBlock.visible = !active;
+            heightGuide.visible = !active;
+
+            if (!active) {
+                blocksContainer.rotation.y = 0;
+            }
+        }
+
+        function updateAllBlocksColor(oldColor, newColor) {
+            blocksContainer.children.forEach(block => {
+                if (block.userData.color === oldColor) {
+                    block.userData.color = newColor;
+                    block.traverse(child => {
+                        if (child.isMesh) {
+                            child.material.color.set(newColor);
+                        }
+                    });
+                }
+            });
+            // Update palette too
+            const idx = currentPalette.indexOf(oldColor);
+            if (idx !== -1) currentPalette[idx] = newColor;
+            if (selectedColor === oldColor) selectedColor = newColor;
+            renderPalette();
+            createGhostBlock();
+        }
+
+        function updateLightAngle(angle) {
+            lightAngle = angle;
+            const rad = THREE.MathUtils.degToRad(angle);
+            const radius = 25;
+            const height = getModelHeight();
+            sunLight.position.set(
+                Math.cos(rad) * radius,
+                height + 15,
+                Math.sin(rad) * radius
+            );
+            document.getElementById('label-light-angle').textContent = `${Math.round(angle)}°`;
+        }
+
+        function getModelHeight() {
+            if (blocksContainer.children.length === 0) return 0;
+            const bbox = new THREE.Box3().setFromObject(blocksContainer);
+            return bbox.max.y;
+        }
+
+        function updateLightPositions() {
+            updateLightAngle(lightAngle);
+            const h = getModelHeight();
+            const colors = [0xffaa00, 0x00d2ff, 0xff00ff];
+            nightLights.forEach((l, i) => {
+                const angle = (i / 3) * Math.PI * 2;
+                l.position.set(Math.cos(angle) * 8, h - 2.5, Math.sin(angle) * 8);
+            });
+        }
+
+        function updateLayerVisibility() {
+            if (!isLayerEditMode) {
+                blocksContainer.children.forEach(b => b.visible = true);
+                return;
+            }
+            blocksContainer.children.forEach(b => {
+                // b.position.y is the base of the block
+                b.visible = (Math.round(b.position.y * 10) / 10 <= currentHeight);
+            });
+        }
+
+        function initBulkDrag(hitPoint) {
+            isDraggingBulk = true;
+            bulkDragStartPoint.copy(hitPoint);
+            controls.enabled = false; // Lock camera
+
+            const h = currentHeight;
+            targetBulkBlocks = blocksContainer.children.filter(b => {
+                const bottomY = Math.round(b.position.y * 10) / 10;
+                return bottomY >= h - 0.1;
+            });
+
+            initialBulkPositions = targetBulkBlocks.map(b => b.position.clone());
+        }
+
+        function updateBulkDrag(currentPoint) {
+            if (!isDraggingBulk) return;
+
+            const snap = isHalfSnap ? 0.5 : 1.0;
+            const delta = currentPoint.clone().sub(bulkDragStartPoint);
+
+            // Snap delta to grid
+            const snapDeltaX = Math.round(delta.x / snap) * snap;
+            const snapDeltaZ = Math.round(delta.z / snap) * snap;
+
+            targetBulkBlocks.forEach((b, i) => {
+                b.position.x = initialBulkPositions[i].x + snapDeltaX;
+                b.position.z = initialBulkPositions[i].z + snapDeltaZ;
+            });
+
+            updateLightPositions();
+        }
+
+        function endBulkDrag() {
+            isDraggingBulk = false;
+            if (!isBulkMoveMode) {
+                controls.enabled = true; // Unlock camera
+            }
+            targetBulkBlocks = [];
+            initialBulkPositions = [];
+        }
+        function insertLayer() {
+            // User requested "act as if one layer below is selected"
+            // If currentHeight is 3, we push everything from 2 up, so 2 becomes empty.
+            // The stuff that was at 2 moves to 3. The stuff at 3 moves to 4.
+            const h = currentHeight;
+            const targetH = Math.max(0, h - 1);
+            const blocks = [...blocksContainer.children];
+            blocks.forEach(b => {
+                const bottomY = Math.round(b.position.y * 10) / 10;
+                if (bottomY >= targetH - 0.1) {
+                    b.position.y += 1.0;
+                }
+            });
+            updateLightPositions();
+            updateLayerVisibility();
+        }
+
+        function deleteLayer() {
+            const h = currentHeight;
+            const blocks = [...blocksContainer.children];
+            // 1. Remove blocks exactly at current height
+            const toRemove = blocks.filter(b => Math.abs(b.position.y - h) < 0.1);
+            toRemove.forEach(b => blocksContainer.remove(b));
+
+            // 2. Shift blocks STRICTLY above down
+            blocks.forEach(b => {
+                const bottomY = Math.round(b.position.y * 10) / 10;
+                if (bottomY > h + 0.1) {
+                    b.position.y -= 1.0;
+                }
+            });
+            updateLightPositions();
+            updateLayerVisibility();
+        }
+
+        let currentPalette = [...DEFAULT_COLORS];
+        let selectedColor = currentPalette[0];
+        let selectedShape = SHAPES[0];
+        let selectedType = 'box';
+        let rotationAngle = 0;
+        let currentHeight = 0;
+        let isHalfSnap = false;
+        let isClear = false;
+        let canPlace = true;
+
+        function init() {
+            scene = new THREE.Scene();
+            scene.background = new THREE.Color(0x050507);
+            scene.fog = new THREE.Fog(0x050507, 20, 100);
+
+            blocksContainer = new THREE.Group();
+            blocksContainer.name = "ChicchanaBlockModel";
+            scene.add(blocksContainer);
+
+            camera = new THREE.PerspectiveCamera(45, window.innerWidth / window.innerHeight, 0.1, 1000);
+            camera.position.set(15, 15, 15);
+            camera.lookAt(0, 0, 0);
+
+            renderer = new THREE.WebGLRenderer({ antialias: true, preserveDrawingBuffer: true });
+            renderer.setPixelRatio(window.devicePixelRatio);
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            renderer.shadowMap.enabled = true;
+            renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+            document.body.appendChild(renderer.domElement);
+
+            controls = new THREE.OrbitControls(camera, renderer.domElement);
+            controls.enableDamping = true;
+            controls.dampingFactor = 0.05;
+
+            scene.add(new THREE.GridHelper(GRID_SIZE, GRID_DIVISIONS, 0x222225, 0x111113));
+
+            const guideGeo = new THREE.PlaneGeometry(GRID_SIZE, GRID_SIZE);
+            guideGeo.rotateX(-Math.PI / 2);
+            heightGuide = new THREE.Mesh(guideGeo, new THREE.MeshBasicMaterial({
+                color: 0x00d2ff, transparent: true, opacity: 0.15, side: THREE.DoubleSide
+            }));
+            scene.add(heightGuide);
+
+            ambientLight = new THREE.AmbientLight(0xffffff, 0.5);
+            scene.add(ambientLight);
+            sunLight = new THREE.DirectionalLight(0xffffff, 1.2);
+            sunLight.position.set(10, 20, 10);
+            sunLight.castShadow = true;
+            scene.add(sunLight);
+
+            // Night Mode Spotlights (Initial intensity 0)
+            const nightColors = [0xffaa00, 0x00d2ff, 0xff00ff]; // Warm, Cyan, Magenta
+            for (let i = 0; i < 3; i++) {
+                const nl = new THREE.PointLight(nightColors[i], 0, 30);
+                nl.castShadow = true;
+                const angle = (i / 3) * Math.PI * 2;
+                nl.position.set(Math.cos(angle) * 8, -2, Math.sin(angle) * 8);
+                scene.add(nl);
+                nightLights.push(nl);
+            }
+
+            raycaster = new THREE.Raycaster();
+            mouse = new THREE.Vector2();
+
+            initUI();
+
+            window.addEventListener('resize', () => {
+                camera.aspect = window.innerWidth / window.innerHeight;
+                camera.updateProjectionMatrix();
+                renderer.setSize(window.innerWidth, window.innerHeight);
+            });
+            window.addEventListener('mousemove', onMouseMove);
+            window.addEventListener('mousedown', onMouseDown);
+            window.addEventListener('keydown', onKeyDown);
+            window.addEventListener('mouseup', onMouseUp);
+            window.addEventListener('contextmenu', (e) => e.preventDefault());
+
+            createGhostBlock();
+            animate();
+        }
+
+        function onMouseUp(e) {
+            if (isDraggingBulk) {
+                endBulkDrag();
+            }
+        }
+
+        function updateLighting(type = currentLightingPreset) {
+            currentLightingPreset = type;
+            const intensity = lightIntensity;
+
+            // Reset lights
+            nightLights.forEach(l => l.intensity = 0);
+            sunLight.intensity = 0;
+            ambientLight.intensity = 0;
+            scene.fog.near = 20;
+            scene.fog.far = 100;
+
+            if (type === 'studio') {
+                scene.background.set(0x050507);
+                scene.fog.color.set(0x050507);
+                ambientLight.intensity = 0.5 * intensity;
+                sunLight.intensity = 1.2 * intensity;
+                sunLight.color.set(0xffffff);
+                if (heightGuide) heightGuide.material.color.set(0x00d2ff);
+            } else if (type === 'outdoor') {
+                scene.background.set(0x87ceeb);
+                scene.fog.color.set(0x87ceeb);
+                ambientLight.intensity = 0.8 * intensity;
+                sunLight.intensity = 1.5 * intensity;
+                sunLight.color.set(0xfffaf0);
+                if (heightGuide) heightGuide.material.color.set(0xffaa00);
+            } else if (type === 'night') {
+                scene.background.set(0x000005);
+                scene.fog.color.set(0x000005);
+                scene.fog.near = 10;
+                scene.fog.far = 50;
+                ambientLight.intensity = 0.05 * intensity;
+                sunLight.intensity = 0.1 * intensity;
+                sunLight.color.set(0x3333ff);
+                nightLights.forEach(l => l.intensity = 2.5 * intensity);
+                if (heightGuide) heightGuide.material.color.set(0x8338ec);
+            } else if (type === 'none') {
+                scene.background.set(0xeeeeee);
+                scene.fog.color.set(0xeeeeee);
+                ambientLight.intensity = 1.2 * intensity;
+                sunLight.intensity = 0;
+                if (heightGuide) heightGuide.material.color.set(0x555555);
+            }
+            updateLightPositions();
+        }
+
+        // --- Stud & Hole Logic ---
+        function getStudsInWorld() {
+            const studs = [];
+            blocksContainer.children.forEach(block => {
+                const bType = block.userData.type;
+                const bShape = block.userData.shape;
+                const bPos = block.position;
+                const bRot = block.rotation.y;
+                const bBaseType = bType.replace('-h2', '');
+                const bIsH2 = bType.endsWith('-h2');
+                const bH = bIsH2 ? 1 : 0.5;
+
+                if (['box', 'inv-slope', 'cylinder', 'jumper'].includes(bBaseType)) {
+                    if (bBaseType === 'jumper') {
+                        studs.push({ x: bPos.x, y: bPos.y + bH, z: bPos.z });
+                    } else {
+                        const rot = Math.round(bRot / (Math.PI / 2)) % 2 !== 0;
+                        const w = rot ? bShape.d : bShape.w;
+                        const d = rot ? bShape.w : bShape.d;
+                        for (let i = 0; i < w; i++) {
+                            for (let j = 0; j < d; j++) {
+                                studs.push({
+                                    x: bPos.x + (i - (w - 1) / 2),
+                                    y: bPos.y + bH,
+                                    z: bPos.z + (j - (d - 1) / 2)
+                                });
+                            }
+                        }
+                    }
+                }
+            });
+            return studs;
+        }
+
+        function getHolesInWorld(pos, rot, shape, type) {
+            const holes = [];
+            const r = Math.round(rot / (Math.PI / 2)) % 2 !== 0;
+            const w = r ? shape.d : shape.w;
+            const d = r ? shape.w : shape.d;
+
+            for (let i = 0; i < w; i++) {
+                for (let j = 0; j < d; j++) {
+                    holes.push({
+                        x: pos.x + (i - (w - 1) / 2),
+                        y: pos.y - 0.5,
+                        z: pos.z + (j - (d - 1) / 2)
+                    });
+                }
+            }
+            return holes;
+        }
+
+        function createBlockMeshFromSave(d) {
+            const b = createBlockMesh(d.c, d.s, d.t, false, d.cl || false);
+            b.position.fromArray(d.p);
+            b.rotation.fromArray(d.r);
+            return b;
+        }
+
+        function createBlockMesh(color, shape, type, isGhost = false, clearOverride = null) {
+            const group = new THREE.Group();
+            const w = shape.w;
+            const d = shape.d;
+            const isH2 = type.endsWith('-h2');
+            const h = isH2 ? BLOCK_SIZE * 2 : BLOCK_SIZE;
+            const isClearBlock = clearOverride !== null ? clearOverride : (isGhost ? isClear : false);
+
+            const mat = new THREE.MeshStandardMaterial({
+                color: color,
+                transparent: isGhost || isClearBlock,
+                opacity: isGhost ? (canPlace ? 0.4 : 0.7) : (isClearBlock ? 0.8 : 1),
+                roughness: isClearBlock ? 0.05 : 0.2,
+                metalness: isClearBlock ? 0.4 : 0.2
+            });
+
+            let geo;
+            if (type === 'box' || type === 'jumper' || type === 'flat') {
+                geo = new THREE.BoxGeometry(w * BLOCK_SIZE, h, d * BLOCK_SIZE);
+            } else if (type === 'cylinder') {
+                if (w === 1 && d === 1) {
+                    geo = new THREE.CylinderGeometry(w * BLOCK_SIZE / 2, w * BLOCK_SIZE / 2, h, 32);
+                } else {
+                    const sP = new THREE.Shape();
+                    const hW = (w * BLOCK_SIZE) / 2;
+                    const hD = (d * BLOCK_SIZE) / 2;
+                    const r = 0.5;
+                    sP.moveTo(-hW + r, -hD);
+                    sP.lineTo(hW - r, -hD);
+                    sP.absarc(hW - r, -hD + r, r, -Math.PI / 2, 0, false);
+                    sP.lineTo(hW, hD - r);
+                    sP.absarc(hW - r, hD - r, r, 0, Math.PI / 2, false);
+                    sP.lineTo(-hW + r, hD);
+                    sP.absarc(-hW + r, hD - r, r, Math.PI / 2, Math.PI, false);
+                    sP.lineTo(-hW, -hD + r);
+                    sP.absarc(-hW + r, -hD + r, r, Math.PI, Math.PI * 1.5, false);
+                    geo = new THREE.ExtrudeGeometry(sP, { depth: h, bevelEnabled: false });
+                    geo.rotateX(Math.PI / 2);
+                    geo.center();
+                }
+            } else if (type === 'slope' || type === 'inv-slope' || type === 'slope-h2' || type === 'inv-slope-h2') {
+                const p = new THREE.Shape();
+                if (type.startsWith('slope')) { p.moveTo(-0.5, -0.5); p.lineTo(0.5, -0.5); p.lineTo(0.5, 0.5); p.lineTo(-0.5, -0.5); }
+                else { p.moveTo(-0.5, 0.5); p.lineTo(0.5, 0.5); p.lineTo(0.5, -0.5); p.lineTo(-0.5, 0.5); }
+                geo = new THREE.ExtrudeGeometry(p, { depth: 1, bevelEnabled: false });
+                geo.center(); geo.rotateY(Math.PI / 2); geo.scale(w, h / BLOCK_SIZE, d);
+            }
+
+            const mesh = new THREE.Mesh(geo, mat);
+            mesh.position.y = h / 2;
+            mesh.castShadow = !isGhost; mesh.receiveShadow = !isGhost;
+            group.add(mesh);
+
+            const sGeo = new THREE.CylinderGeometry(BLOCK_SIZE * 0.3, BLOCK_SIZE * 0.3, BLOCK_SIZE * 0.15, 24);
+            const baseType = type.replace('-h2', '');
+            if (['box', 'inv-slope', 'cylinder'].includes(baseType)) {
+                for (let i = 0; i < w; i++) {
+                    for (let j = 0; j < d; j++) {
+                        const s = new THREE.Mesh(sGeo, mat.clone());
+                        s.position.set((i - (w - 1) / 2) * BLOCK_SIZE, h + 0.08, (j - (d - 1) / 2) * BLOCK_SIZE);
+                        s.castShadow = !isGhost; group.add(s);
+                    }
+                }
+            } else if (baseType === 'jumper') {
+                const s = new THREE.Mesh(sGeo, mat.clone());
+                s.position.set(0, h + 0.08, 0); s.castShadow = !isGhost; group.add(s);
+            }
+
+            group.userData = { shape, type, color, isClear: isClearBlock };
+            return group;
+        }
+
+        function createGhostBlock() {
+            if (ghostBlock) scene.remove(ghostBlock);
+            ghostBlock = createBlockMesh(selectedColor, selectedShape, selectedType, true);
+            ghostBlock.rotation.y = THREE.MathUtils.degToRad(rotationAngle);
+            scene.add(ghostBlock);
+        }
+
+        function toggleBulkMoveMode(show) {
+            isBulkMoveMode = show;
+            const overlay = document.getElementById('bulk-move-overlay');
+            overlay.style.display = show ? 'flex' : 'none';
+
+            if (show) {
+                // Save current state
+                savedCameraPos.copy(camera.position);
+                savedCameraTarget.copy(controls.target);
+                savedLayerMode = isLayerEditMode;
+
+                // Force Layer Edit Mode
+                isLayerEditMode = true;
+                document.getElementById('check-layer-mode').checked = true;
+                updateLayerVisibility();
+
+                // Close layer modal
+                document.getElementById('modal-layers').style.display = 'none';
+                ghostBlock.visible = false;
+
+                // Fix Camera View
+                controls.enabled = false;
+                camera.position.set(12, currentHeight + 15, 12);
+                controls.target.set(0, currentHeight, 0);
+                camera.lookAt(0, currentHeight, 0);
+                controls.update();
+
+            } else {
+                // Restore state
+                isLayerEditMode = savedLayerMode;
+                document.getElementById('check-layer-mode').checked = savedLayerMode;
+                updateLayerVisibility();
+
+                controls.enabled = true;
+                camera.position.copy(savedCameraPos);
+                controls.target.copy(savedCameraTarget);
+                controls.update();
+
+                createGhostBlock();
+            }
+        }
+        function renderPalette() {
+            const container = document.querySelector('.color-palette');
+            const addBtn = document.getElementById('btn-add-color');
+            container.querySelectorAll('.color-swatch').forEach(s => s.remove());
+
+            currentPalette.forEach((color, idx) => {
+                const s = document.createElement('div');
+                s.className = 'color-swatch' + (color === selectedColor ? ' active' : '');
+                s.style.backgroundColor = color;
+                s.onclick = () => { selectedColor = color; renderPalette(); createGhostBlock(); };
+
+                // Custom context menu logic
+                s.oncontextmenu = (e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    showContextMenu(e.clientX, e.clientY, color);
+                };
+
+                container.insertBefore(s, addBtn);
+            });
+        }
+
+        function initUI() {
+            const customIn = document.getElementById('custom-color-input');
+            document.getElementById('btn-add-color').onclick = () => customIn.click();
+            customIn.oninput = (e) => { selectedColor = e.target.value; createGhostBlock(); };
+            customIn.onchange = (e) => {
+                if (!currentPalette.includes(e.target.value)) { currentPalette.push(e.target.value); renderPalette(); }
+            };
+            renderPalette();
+
+            const shapesGrid = document.querySelector('.shapes-grid');
+            SHAPES.forEach(shape => {
+                const b = document.createElement('div');
+                b.className = 'shape-btn' + (shape.id === selectedShape.id ? ' active' : '');
+                b.textContent = shape.id;
+                b.onclick = () => {
+                    document.querySelectorAll('.shape-btn').forEach(x => x.classList.remove('active'));
+                    b.classList.add('active');
+                    if (shape.id === 'カスタム') {
+                        selectedShape = { id: 'custom', w: parseInt(document.getElementById('input-w').value), d: parseInt(document.getElementById('input-d').value) };
+                    } else {
+                        selectedShape = shape;
+                        document.getElementById('input-w').value = shape.w;
+                        document.getElementById('input-d').value = shape.d;
+                    }
+                    createGhostBlock();
+                };
+                shapesGrid.appendChild(b);
+            });
+
+            document.getElementById('input-w').oninput = document.getElementById('input-d').oninput = document.getElementById('select-type').onchange = () => {
+                selectedShape = { id: 'custom', w: parseInt(document.getElementById('input-w').value), d: parseInt(document.getElementById('input-d').value) };
+                selectedType = document.getElementById('select-type').value;
+                document.querySelectorAll('.shape-btn').forEach(x => x.classList.remove('active'));
+                document.querySelector('.shape-btn:last-child').classList.add('active');
+                createGhostBlock();
+            };
+
+            const updateH = (v) => {
+                currentHeight = Math.max(0, currentHeight + v);
+                document.getElementById('label-h').textContent = `H: ${currentHeight}`;
+                heightGuide.position.y = currentHeight;
+                updateLayerVisibility();
+            };
+            document.getElementById('btn-h-up').onclick = () => updateH(1);
+            document.getElementById('btn-h-down').onclick = () => updateH(-1);
+            document.getElementById('check-half-snap').onchange = (e) => isHalfSnap = e.target.checked;
+            document.getElementById('check-clear').onchange = (e) => { isClear = e.target.checked; createGhostBlock(); };
+            document.getElementById('check-layer-mode').onchange = (e) => { isLayerEditMode = e.target.checked; updateLayerVisibility(); };
+            document.getElementById('btn-layer-insert').onclick = () => { if (confirm("現在選択中の高さにあるブロックを1段上に押し上げて、ここに空欄を作りますか？")) insertLayer(); };
+            document.getElementById('btn-layer-delete').onclick = () => { if (confirm("現在のレイヤーを削除し、上の段を下げますか？")) deleteLayer(); };
+
+            document.getElementById('btn-start-bulk-move').onclick = () => toggleBulkMoveMode(true);
+            document.getElementById('btn-exit-bulk-move').onclick = () => toggleBulkMoveMode(false);
+
+            const lightingSelect = document.getElementById('select-lighting');
+            if (lightingSelect) lightingSelect.onchange = (e) => updateLighting(e.target.value);
+
+            const lightAngleInput = document.getElementById('input-light-angle');
+            if (lightAngleInput) lightAngleInput.oninput = (e) => updateLightAngle(parseInt(e.target.value));
+
+            const lightIntensityInput = document.getElementById('input-light-intensity');
+            if (lightIntensityInput) {
+                lightIntensityInput.oninput = (e) => {
+                    lightIntensity = parseInt(e.target.value) / 100;
+                    document.getElementById('label-light-intensity').textContent = `${e.target.value}%`;
+                    updateLighting();
+                };
+            }
+
+            function toggleModal(modalId) {
+                const targetModal = document.getElementById(modalId);
+                const isCurrentlyOpen = targetModal.style.display === 'flex';
+
+                // Close all modals
+                document.querySelectorAll('.modal-overlay').forEach(m => m.style.display = 'none');
+
+                if (!isCurrentlyOpen) {
+                    targetModal.style.display = 'flex';
+                }
+            }
+
+            document.getElementById('btn-open-lighting').onclick = () => toggleModal('modal-lighting');
+            document.getElementById('btn-close-lighting').onclick = () => document.getElementById('modal-lighting').style.display = 'none';
+
+            document.getElementById('btn-open-layers').onclick = () => toggleModal('modal-layers');
+            document.getElementById('btn-close-layers').onclick = () => document.getElementById('modal-layers').style.display = 'none';
+
+            document.getElementById('btn-open-project').onclick = () => toggleModal('modal-project');
+            document.getElementById('btn-close-project').onclick = () => document.getElementById('modal-project').style.display = 'none';
+
+            document.getElementById('btn-rotate').onclick = () => { rotationAngle = (rotationAngle + 90) % 360; createGhostBlock(); };
+            document.getElementById('btn-clear').onclick = () => {
+                while (blocksContainer.children.length > 0) blocksContainer.remove(blocksContainer.children[0]);
+                updateLightPositions();
+            };
+            document.getElementById('btn-screenshot').onclick = () => { const a = document.createElement('a'); a.download = 'render.png'; a.href = renderer.domElement.toDataURL(); a.click(); };
+            document.getElementById('btn-view-mode').onclick = () => toggleViewMode(true);
+            document.getElementById('btn-exit-view').onclick = () => toggleViewMode(false);
+
+            // Context Menu Items
+            document.getElementById('menu-remove-color').onclick = () => {
+                const color = contextMenuColor;
+                const idx = currentPalette.indexOf(color);
+                if (idx !== -1) {
+                    currentPalette.splice(idx, 1);
+                    if (selectedColor === color) selectedColor = currentPalette[0] || '#ffffff';
+                    renderPalette();
+                }
+                hideContextMenu();
+            };
+            document.getElementById('menu-change-color').onclick = () => {
+                document.getElementById('change-color-input').click();
+                hideContextMenu();
+            };
+            document.getElementById('change-color-input').onchange = (e) => {
+                updateAllBlocksColor(contextMenuColor, e.target.value);
+            };
+
+            window.addEventListener('click', hideContextMenu);
+
+            document.getElementById('btn-save').onclick = () => {
+                const proj = { palette: currentPalette, blocks: blocksContainer.children.map(b => ({ c: b.userData.color, s: b.userData.shape, t: b.userData.type, cl: b.userData.isClear || false, p: b.position.toArray(), r: b.rotation.toArray() })) };
+                const blob = new Blob([JSON.stringify(proj)], { type: 'application/json' });
+                const a = document.createElement('a'); a.download = 'chicchanablock_project.json'; a.href = URL.createObjectURL(blob); a.click();
+            };
+
+            const fIn = document.getElementById('file-input');
+            document.getElementById('btn-load').onclick = () => fIn.click();
+            fIn.onchange = (e) => {
+                const f = e.target.files[0]; if (!f) return;
+                const r = new FileReader();
+                r.onload = (re) => {
+                    const data = JSON.parse(re.target.result);
+                    if (data.palette) currentPalette = data.palette;
+                    selectedColor = currentPalette[0] || '#ffffff';
+                    renderPalette();
+                    while (blocksContainer.children.length > 0) blocksContainer.remove(blocksContainer.children[0]);
+                    data.blocks.forEach(d => {
+                        const b = createBlockMeshFromSave(d);
+                        blocksContainer.add(b);
+                    });
+                    updateLighting();
+                }; r.readAsText(f);
+            };
+
+            document.getElementById('btn-export').onclick = () => {
+                const exporter = new THREE.GLTFExporter();
+                exporter.parse(blocksContainer, (res) => {
+                    const isBinary = res instanceof ArrayBuffer;
+                    const blob = isBinary ? new Blob([res], { type: 'application/octet-stream' }) : new Blob([JSON.stringify(res)], { type: 'application/json' });
+                    const a = document.createElement('a');
+                    a.download = isBinary ? 'chicchanablock_model.glb' : 'chicchanablock_model.gltf';
+                    a.href = URL.createObjectURL(blob); a.click();
+                }, (err) => {
+                    console.error('GLTF Export Error:', err);
+                }, { binary: true });
+            };
+
+            document.getElementById('btn-new-project').onclick = () => {
+                if (confirm("現在の作業内容とカスタムカラーパレットをすべて消去して、新しく作り直しますか？")) {
+                    resetProject();
+                }
+            };
+        }
+
+        function resetProject() {
+            // Clear blocks
+            while (blocksContainer.children.length > 0) {
+                blocksContainer.remove(blocksContainer.children[0]);
+            }
+
+            // Reset Height
+            currentHeight = 0;
+            document.getElementById('label-h').textContent = `H: ${currentHeight}`;
+            heightGuide.position.y = currentHeight;
+
+            // Reset Palette
+            currentPalette = [...DEFAULT_COLORS];
+            selectedColor = currentPalette[1]; // default to black
+            renderPalette();
+
+            // Reset UI state
+            updateLayerVisibility();
+            updateLighting();
+            createGhostBlock();
+
+            // Close modal
+            document.getElementById('modal-project').style.display = 'none';
+        }
+
+        function onMouseMove(event) {
+            mouse.x = (event.clientX / window.innerWidth) * 2 - 1;
+            mouse.y = -(event.clientY / window.innerHeight) * 2 + 1;
+            if (event.target !== renderer.domElement) { ghostBlock.visible = false; return; }
+
+            raycaster.setFromCamera(mouse, camera);
+
+            // If dragging bulk, update positions and return
+            if (isDraggingBulk) {
+                const intersectPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), -currentHeight);
+                const intersection = new THREE.Vector3();
+                if (raycaster.ray.intersectPlane(intersectPlane, intersection)) {
+                    updateBulkDrag(intersection);
+                }
+                return;
+            }
+
+            if (isBulkMoveMode) { ghostBlock.visible = false; return; }
+
+            // Normal ghost block logic
+            const visibleBlocks = blocksContainer.children.filter(b => b.visible);
+            const hits = raycaster.intersectObjects([...visibleBlocks, heightGuide], true);
+
+            if (hits.length > 0 && !isBulkMoveMode) {
+                const hit = hits[0];
+                let pt = hit.point.clone();
+                if (hit.object !== heightGuide) pt.add(hit.face.normal.clone().multiplyScalar(0.5));
+
+                const snap = isHalfSnap ? 0.5 : 1.0;
+                const rot = (rotationAngle / 90) % 2 !== 0;
+                const eW = rot ? selectedShape.d : selectedShape.w;
+                const eD = rot ? selectedShape.w : selectedShape.d;
+
+                // --- Advanced Fitting Logic ---
+                const studs = getStudsInWorld();
+                const currentY = Math.max(currentHeight, Math.round(pt.y - 0.5));
+
+                // Try aligning ghost holes with nearby studs
+                let bestPos = null;
+                let minDist = 0.8;
+
+                // Preliminary Snapping (Standard Grid)
+                const off = (v, s) => { const c = (s % 2 === 0) ? 0 : 0.5; return Math.round((v - c) / snap) * snap + c; };
+                let candidatePos = new THREE.Vector3(off(pt.x, eW), currentY, off(pt.z, eD));
+
+                studs.filter(s => Math.abs(s.y - (currentY - 0.5)) < 0.1).forEach(s => {
+                    const r = Math.round(THREE.MathUtils.degToRad(rotationAngle) / (Math.PI / 2)) % 2 !== 0;
+                    const w = r ? selectedShape.d : selectedShape.w;
+                    const d = r ? selectedShape.w : selectedShape.d;
+
+                    for (let i = 0; i < w; i++) {
+                        for (let j = 0; j < d; j++) {
+                            const testPosX = s.x - (i - (w - 1) / 2);
+                            const testPosZ = s.z - (j - (d - 1) / 2);
+                            const dist = Math.sqrt((testPosX - pt.x) ** 2 + (testPosZ - pt.z) ** 2);
+                            if (dist < minDist) {
+                                minDist = dist;
+                                bestPos = new THREE.Vector3(testPosX, currentY, testPosZ);
+                            }
+                        }
+                    }
+                });
+
+                ghostBlock.position.copy(bestPos || candidatePos);
+
+                // --- Validation ---
+                const holes = getHolesInWorld(ghostBlock.position, ghostBlock.rotation.y, selectedShape, selectedType);
+                const relevantStuds = studs.filter(s => Math.abs(s.y - (ghostBlock.position.y - 0.5)) < 0.1);
+
+                let isIllegal = false;
+                holes.forEach(hole => {
+                    relevantStuds.forEach(stud => {
+                        const dx = Math.abs(hole.x - stud.x);
+                        const dz = Math.abs(hole.z - stud.z);
+                        if (dx < 0.8 && dz < 0.8 && (dx > 0.1 || dz > 0.1)) isIllegal = true;
+                    });
+                });
+
+                canPlace = !isIllegal;
+                ghostBlock.traverse(child => {
+                    if (child.isMesh) {
+                        child.material.color.set(canPlace ? selectedColor : 0xff4d4d);
+                        child.material.opacity = canPlace ? 0.4 : 0.7;
+                    }
+                });
+
+                ghostBlock.visible = true;
+            } else {
+                ghostBlock.visible = false;
+            }
+        }
+
+        function onMouseDown(e) {
+            if (e.target !== renderer.domElement) return;
+
+            raycaster.setFromCamera(mouse, camera);
+            const visibleBlocks = blocksContainer.children.filter(b => b.visible);
+
+            if (isBulkMoveMode) {
+                if (e.button === 0) {
+                    const hits = raycaster.intersectObjects(visibleBlocks, true);
+                    if (hits.length > 0) {
+                        // Clicked ANY block -> move ALL H+ blocks
+                        initBulkDrag(hits[0].point);
+                    }
+                }
+                return;
+            }
+
+            if (e.button === 0 && ghostBlock.visible && canPlace) {
+                const b = createBlockMesh(selectedColor, selectedShape, selectedType, false, isClear);
+                b.position.copy(ghostBlock.position); b.rotation.copy(ghostBlock.rotation);
+                blocksContainer.add(b);
+                updateLightPositions();
+                updateLayerVisibility(); // Ensure visibility is correct for new block
+            } else if (e.button === 2) {
+                raycaster.setFromCamera(mouse, camera);
+                const visibleBlocks = blocksContainer.children.filter(b => b.visible);
+                const hits = raycaster.intersectObjects(visibleBlocks, true);
+                if (hits.length > 0) {
+                    let o = hits[0].object;
+                    while (o.parent !== blocksContainer) o = o.parent;
+                    blocksContainer.remove(o);
+                    updateLightPositions();
+                }
+            }
+        }
+
+        function onKeyDown(e) {
+            const k = e.key.toLowerCase();
+            if (k === 'r') document.getElementById('btn-rotate').click();
+            if (k === 'q') document.getElementById('btn-h-down').click();
+            if (k === 'e') document.getElementById('btn-h-up').click();
+        }
+
+        function animate() {
+            requestAnimationFrame(animate);
+            controls.update();
+            if (isViewMode) {
+                blocksContainer.rotation.y += 0.005;
+            }
+            renderer.render(scene, camera);
+        }
+        init();
+    </script>
+</body>
+
+</html>
