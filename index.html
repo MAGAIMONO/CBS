@@ -1271,32 +1271,105 @@
             let touchStartTime = 0;
             let touchStartX = 0;
             let touchStartY = 0;
+            let isDraggingGhost = false;
+            let longPressTimer = null;
+            let movedDuringTouch = false;
+
+            const getTouchMousePos = (e) => {
+                const touch = e.touches[0] || e.changedTouches[0];
+                return {
+                    x: (touch.clientX / window.innerWidth) * 2 - 1,
+                    y: -(touch.clientY / window.innerHeight) * 2 + 1,
+                    clientX: touch.clientX,
+                    clientY: touch.clientY
+                };
+            };
 
             renderer.domElement.addEventListener('touchstart', (e) => {
                 if (e.touches.length > 1) return;
                 touchStartTime = Date.now();
-                touchStartX = e.touches[0].clientX;
-                touchStartY = e.touches[0].clientY;
-                // For ghost block update
-                onMouseMove({ clientX: touchStartX, clientY: touchStartY });
+                const pos = getTouchMousePos(e);
+                touchStartX = pos.clientX;
+                touchStartY = pos.clientY;
+                movedDuringTouch = false;
+
+                // Update mouse for raycasting
+                mouse.x = pos.x;
+                mouse.y = pos.y;
+
+                // Check if touching ghost or existing block
+                raycaster.setFromCamera(mouse, camera);
+                const ghostHit = raycaster.intersectObject(ghostBlock, true);
+                if (ghostHit.length > 0) {
+                    isDraggingGhost = true;
+                    controls.enabled = false;
+                }
+
+                // Long press detection for picking up
+                const visibleBlocks = blocksContainer.children.filter(b => b.visible);
+                const blockHits = raycaster.intersectObjects(visibleBlocks, true);
+                if (blockHits.length > 0) {
+                    let target = blockHits[0].object;
+                    while (target.parent !== blocksContainer) target = target.parent;
+                    longPressTimer = setTimeout(() => {
+                        pickUpBlock(target);
+                        isDraggingGhost = true; // Drag the picked up block immediately
+                        controls.enabled = false;
+                        longPressTimer = null;
+                    }, 600);
+                }
+            }, { passive: false });
+
+            renderer.domElement.addEventListener('touchmove', (e) => {
+                if (e.touches.length > 1) return;
+                const pos = getTouchMousePos(e);
+                const dist = Math.sqrt((pos.clientX - touchStartX) ** 2 + (pos.clientY - touchStartY) ** 2);
+                if (dist > 10) {
+                    movedDuringTouch = true;
+                    if (longPressTimer) {
+                        clearTimeout(longPressTimer);
+                        longPressTimer = null;
+                    }
+                }
+
+                if (isDraggingGhost) {
+                    // Force mouse update and call onMouseMove
+                    mouse.x = pos.x;
+                    mouse.y = pos.y;
+                    onMouseMove(pos);
+                    e.preventDefault();
+                }
             }, { passive: false });
 
             renderer.domElement.addEventListener('touchend', (e) => {
                 const duration = Date.now() - touchStartTime;
-                const endX = e.changedTouches[0].clientX;
-                const endY = e.changedTouches[0].clientY;
-                const dist = Math.sqrt((endX - touchStartX) ** 2 + (endY - touchStartY) ** 2);
+                if (longPressTimer) {
+                    clearTimeout(longPressTimer);
+                    longPressTimer = null;
+                }
 
-                if (duration < 300 && dist < 10) {
-                    // It's a tap!
-                    const fakeEvent = {
-                        clientX: endX,
-                        clientY: endY,
-                        button: isDeleteModeMobile ? 2 : 0, // 2 = Right Click (Delete)
-                        preventDefault: () => { },
-                        target: renderer.domElement
-                    };
-                    onMouseDown(fakeEvent);
+                if (isDraggingGhost) {
+                    isDraggingGhost = false;
+                    controls.enabled = true;
+                }
+
+                if (!movedDuringTouch && duration < 300) {
+                    const pos = getTouchMousePos(e);
+                    mouse.x = pos.x;
+                    mouse.y = pos.y;
+
+                    raycaster.setFromCamera(mouse, camera);
+                    const ghostHit = raycaster.intersectObject(ghostBlock, true);
+                    if (ghostHit.length > 0) {
+                        // Tap on ghost -> PLACE
+                        onMouseDown({
+                            clientX: pos.clientX,
+                            clientY: pos.clientY,
+                            button: 0,
+                            target: renderer.domElement,
+                            preventDefault: () => { }
+                        });
+                    }
                 }
             }, { passive: false });
 
@@ -1356,6 +1429,38 @@
         }
 
         // --- Stud & Hole Logic ---
+        function pickUpBlock(block) {
+            if (!block || !block.userData) return;
+            const d = block.userData;
+
+            // Restore State
+            selectedColor = { hex: d.hex, isClear: d.isClear };
+            selectedType = d.type;
+            const knownShape = SHAPES.find(s => s.w === d.w && s.d === d.d && s.id !== 'カスタム');
+            if (knownShape) {
+                selectedShape = knownShape;
+            } else {
+                selectedShape = { id: 'custom', w: d.w, d: d.d };
+            }
+            currentHeight = d.y / HEIGHT_UNIT;
+
+            // Reflect in UI
+            document.getElementById('input-w').value = document.getElementById('m-input-w').value = d.w;
+            document.getElementById('input-d').value = document.getElementById('m-input-d').value = d.d;
+            document.getElementById('select-type').value = document.getElementById('m-select-type').value = d.type;
+            document.getElementById('label-h').textContent = document.getElementById('m-label-h').textContent = `H: ${currentHeight}`;
+            heightGuide.position.y = d.y;
+
+            renderPalette();
+            if (window.renderShapesMobile) window.renderShapesMobile();
+
+            // Remove the block
+            blocksContainer.remove(block);
+            updateLightPositions();
+            updateLayerVisibility();
+            createGhostBlock();
+        }
+
         function getStudsInWorld() {
             const studs = [];
             blocksContainer.children.forEach(block => {
@@ -1687,7 +1792,7 @@
 
             renderPalette();
 
-            const renderShapes = () => {
+            window.renderShapesMobile = () => { // Make it accessible for picking up sync
                 const grids = document.querySelectorAll('.shapes-grid');
                 grids.forEach(grid => {
                     grid.innerHTML = '';
@@ -1714,9 +1819,8 @@
                     });
                 });
             };
-            renderShapes();
+            renderShapesMobile();
 
-            // Sync inputs between PC and mobile
             const syncInputs = (pcId, mId, prop, isInt = true) => {
                 const pcEl = document.getElementById(pcId);
                 const mEl = document.getElementById(mId);
