@@ -605,6 +605,7 @@
                         <option value="inv-slope-h2">スロープ (逆・高)</option>
                         <option value="cylinder">円柱</option>
                         <option value="jumper">ジャンパー (1点)</option>
+                        <option value="1x3-2s">1x3 (2点ボッチ)</option>
                         <option value="flat">フラット (ポッチなし)</option>
                     </select>
                 </div>
@@ -753,6 +754,11 @@
                 <button class="close-modal" id="btn-close-project">&times;</button>
             </div>
             <div class="control-group">
+                <div class="group-label">プロジェクト名</div>
+                <input type="text" id="input-project-name" placeholder="例: my_chicchana_block"
+                    style="width:100%; background:rgba(0,0,0,0.3); border:1px solid var(--glass-border); color:#fff; border-radius:6px; padding:6px 10px; font-size:0.85rem; box-sizing:border-box;">
+            </div>
+            <div class="control-group">
                 <div class="group-label">プロジェクト管理</div>
                 <div style="display:grid; grid-template-columns: 1fr 1fr; gap:10px;">
                     <button class="action-btn" id="btn-save">保存 (.json)</button>
@@ -788,6 +794,7 @@
         const GRID_SIZE = 20;
         const GRID_DIVISIONS = 20;
         const BLOCK_SIZE = 1;
+        const HEIGHT_UNIT = 0.75;
         const DEFAULT_COLORS = [
             { hex: '#ffffff', isClear: false },
             { hex: '#1a1a1a', isClear: false },
@@ -917,7 +924,7 @@
             }
             blocksContainer.children.forEach(b => {
                 // b.position.y is the base of the block
-                b.visible = (Math.round(b.position.y * 10) / 10 <= currentHeight);
+                b.visible = (Math.round(b.position.y * 10) / 10 <= currentHeight * HEIGHT_UNIT + 0.01);
             });
         }
 
@@ -926,7 +933,7 @@
             bulkDragStartPoint.copy(hitPoint);
             controls.enabled = false; // Lock camera
 
-            const h = currentHeight;
+            const h = currentHeight * HEIGHT_UNIT;
             targetBulkBlocks = blocksContainer.children.filter(b => {
                 const bottomY = Math.round(b.position.y * 10) / 10;
                 return bottomY >= h - 0.1;
@@ -962,16 +969,13 @@
             initialBulkPositions = [];
         }
         function insertLayer() {
-            // User requested "act as if one layer below is selected"
-            // If currentHeight is 3, we push everything from 2 up, so 2 becomes empty.
-            // The stuff that was at 2 moves to 3. The stuff at 3 moves to 4.
-            const h = currentHeight;
-            const targetH = Math.max(0, h - 1);
+            const h = currentHeight * HEIGHT_UNIT;
+            const targetH = Math.max(0, h - HEIGHT_UNIT);
             const blocks = [...blocksContainer.children];
             blocks.forEach(b => {
-                const bottomY = Math.round(b.position.y * 10) / 10;
-                if (bottomY >= targetH - 0.1) {
-                    b.position.y += 1.0;
+                const bottomY = Math.round(b.position.y * 100) / 100;
+                if (bottomY >= targetH - 0.01) {
+                    b.position.y += HEIGHT_UNIT;
                 }
             });
             updateLightPositions();
@@ -979,17 +983,17 @@
         }
 
         function deleteLayer() {
-            const h = currentHeight;
+            const h = currentHeight * HEIGHT_UNIT;
             const blocks = [...blocksContainer.children];
             // 1. Remove blocks exactly at current height
-            const toRemove = blocks.filter(b => Math.abs(b.position.y - h) < 0.1);
+            const toRemove = blocks.filter(b => Math.abs(b.position.y - h) < 0.05);
             toRemove.forEach(b => blocksContainer.remove(b));
 
             // 2. Shift blocks STRICTLY above down
             blocks.forEach(b => {
-                const bottomY = Math.round(b.position.y * 10) / 10;
-                if (bottomY > h + 0.1) {
-                    b.position.y -= 1.0;
+                const bottomY = Math.round(b.position.y * 100) / 100;
+                if (bottomY > h + 0.05) {
+                    b.position.y -= HEIGHT_UNIT;
                 }
             });
             updateLightPositions();
@@ -1138,12 +1142,32 @@
                 const bRot = block.rotation.y;
                 const bBaseType = bType.replace('-h2', '');
                 const bIsH2 = bType.endsWith('-h2');
-                const bH = bIsH2 ? 1 : 0.5;
+                const bH = bIsH2 ? HEIGHT_UNIT : HEIGHT_UNIT * 0.5;
 
-                if (['box', 'inv-slope', 'cylinder', 'jumper'].includes(bBaseType)) {
+                if (['box', 'inv-slope', 'cylinder', 'jumper', '1x3-2s'].includes(bBaseType)) {
                     if (bBaseType === 'jumper') {
                         studs.push({ x: bPos.x, y: bPos.y + bH, z: bPos.z, type: bType, shape: bShape });
+                    } else if (bBaseType === '1x3-2s') {
+                        // Fixed offsets for 1x3-2s: ±0.5 on Z-axis (of block space)
+                        const cos = Math.cos(-bRot);
+                        const sin = Math.sin(-bRot);
+                        const offsets = [{ x: 0, z: -0.5 }, { x: 0, z: 0.5 }];
+                        offsets.forEach(off => {
+                            const rx = off.x * cos - off.z * sin;
+                            const rz = off.x * sin + off.z * cos;
+                            studs.push({ x: bPos.x + rx, y: bPos.y + bH, z: bPos.z + rz, type: bType, shape: { w: 1, d: 3 } });
+                        });
+                    } else if (bShape.studOffsets) {
+                        // Supporting general custom offsets if any
+                        const cos = Math.cos(-bRot);
+                        const sin = Math.sin(-bRot);
+                        bShape.studOffsets.forEach(off => {
+                            const rx = off.x * cos - off.z * sin;
+                            const rz = off.x * sin + off.z * cos;
+                            studs.push({ x: bPos.x + rx, y: bPos.y + bH, z: bPos.z + rz, type: bType, shape: bShape });
+                        });
                     } else {
+                        // Default Grid Fill
                         const rot = Math.round(bRot / (Math.PI / 2)) % 2 !== 0;
                         const w = rot ? bShape.d : bShape.w;
                         const d = rot ? bShape.w : bShape.d;
@@ -1174,7 +1198,7 @@
                 for (let j = 0; j < d; j++) {
                     holes.push({
                         x: pos.x + (i - (w - 1) / 2),
-                        y: pos.y - 0.5,
+                        y: pos.y - HEIGHT_UNIT * 0.5,
                         z: pos.z + (j - (d - 1) / 2)
                     });
                 }
@@ -1191,10 +1215,12 @@
 
         function createBlockMesh(color, shape, type, isGhost = false, clearOverride = false) {
             const group = new THREE.Group();
-            const w = shape.w;
-            const d = shape.d;
+            let w = shape.w;
+            let d = shape.d;
+            if (type === '1x3-2s') { w = 1; d = 3; } // Force size for this special type
+
             const isH2 = type.endsWith('-h2');
-            const h = isH2 ? BLOCK_SIZE * 2 : BLOCK_SIZE;
+            const h = isH2 ? HEIGHT_UNIT * 2 : HEIGHT_UNIT;
             const isClearBlock = clearOverride;
 
             const mat = new THREE.MeshStandardMaterial({
@@ -1206,7 +1232,7 @@
             });
 
             let geo;
-            if (type === 'box' || type === 'jumper' || type === 'flat') {
+            if (type === 'box' || type === 'jumper' || type === 'flat' || type === '1x3-2s') {
                 geo = new THREE.BoxGeometry(w * BLOCK_SIZE, h, d * BLOCK_SIZE);
             } else if (type === 'cylinder') {
                 if (w === 1 && d === 1) {
@@ -1244,12 +1270,27 @@
 
             const sGeo = new THREE.CylinderGeometry(BLOCK_SIZE * 0.3, BLOCK_SIZE * 0.3, BLOCK_SIZE * 0.15, 24);
             const baseType = type.replace('-h2', '');
-            if (['box', 'inv-slope', 'cylinder'].includes(baseType)) {
-                for (let i = 0; i < w; i++) {
-                    for (let j = 0; j < d; j++) {
+            if (['box', 'inv-slope', 'cylinder', '1x3-2s'].includes(baseType)) {
+                if (baseType === '1x3-2s') {
+                    const offsets = [{ x: 0, z: -0.5 }, { x: 0, z: 0.5 }];
+                    offsets.forEach(off => {
                         const s = new THREE.Mesh(sGeo, mat.clone());
-                        s.position.set((i - (w - 1) / 2) * BLOCK_SIZE, h + 0.08, (j - (d - 1) / 2) * BLOCK_SIZE);
+                        s.position.set(off.x * BLOCK_SIZE, h + 0.08, off.z * BLOCK_SIZE);
                         s.castShadow = !isGhost; group.add(s);
+                    });
+                } else if (shape.studOffsets) {
+                    shape.studOffsets.forEach(off => {
+                        const s = new THREE.Mesh(sGeo, mat.clone());
+                        s.position.set(off.x * BLOCK_SIZE, h + 0.08, off.z * BLOCK_SIZE);
+                        s.castShadow = !isGhost; group.add(s);
+                    });
+                } else {
+                    for (let i = 0; i < w; i++) {
+                        for (let j = 0; j < d; j++) {
+                            const s = new THREE.Mesh(sGeo, mat.clone());
+                            s.position.set((i - (w - 1) / 2) * BLOCK_SIZE, h + 0.08, (j - (d - 1) / 2) * BLOCK_SIZE);
+                            s.castShadow = !isGhost; group.add(s);
+                        }
                     }
                 }
             } else if (baseType === 'jumper') {
@@ -1408,7 +1449,7 @@
             const updateH = (v) => {
                 currentHeight = Math.max(0, currentHeight + v);
                 document.getElementById('label-h').textContent = `H: ${currentHeight}`;
-                heightGuide.position.y = currentHeight;
+                heightGuide.position.y = currentHeight * HEIGHT_UNIT;
                 updateLayerVisibility();
             };
             document.getElementById('btn-h-up').onclick = () => updateH(1);
@@ -1494,9 +1535,10 @@
             window.addEventListener('click', hideContextMenu);
 
             document.getElementById('btn-save').onclick = () => {
-                const proj = { palette: currentPalette, blocks: blocksContainer.children.map(b => ({ c: b.userData.color, s: b.userData.shape, t: b.userData.type, cl: b.userData.isClear || false, p: b.position.toArray(), r: b.rotation.toArray() })) };
+                const projectName = document.getElementById('input-project-name').value.trim().replace(/[^a-zA-Z0-9_\u3000-\u9FFF\u30A0-\u30FF\u3040-\u309F]/g, '_') || 'chicchanablock_project';
+                const proj = { name: projectName, palette: currentPalette, blocks: blocksContainer.children.map(b => ({ c: b.userData.color, s: b.userData.shape, t: b.userData.type, cl: b.userData.isClear || false, p: b.position.toArray(), r: b.rotation.toArray() })) };
                 const blob = new Blob([JSON.stringify(proj)], { type: 'application/json' });
-                const a = document.createElement('a'); a.download = 'chicchanablock_project.json'; a.href = URL.createObjectURL(blob); a.click();
+                const a = document.createElement('a'); a.download = `${projectName}.json`; a.href = URL.createObjectURL(blob); a.click();
             };
 
             const fIn = document.getElementById('file-input');
@@ -1513,11 +1555,29 @@
                     selectedColor = currentPalette[0] || DEFAULT_COLORS[0];
                     renderPalette();
                     while (blocksContainer.children.length > 0) blocksContainer.remove(blocksContainer.children[0]);
+
+                    // Backward compatibility: if all Y positions are integers (old height=1 format), scale by HEIGHT_UNIT
+                    const allYInt = data.blocks.every(d => Number.isInteger(Math.round(d.p[1] * 1000) / 1000));
+                    const hasNonZeroY = data.blocks.some(d => d.p[1] !== 0);
+                    if (allYInt && hasNonZeroY) {
+                        data.blocks.forEach(d => { d.p[1] = Math.round(d.p[1] * HEIGHT_UNIT * 1000) / 1000; });
+                    }
+
                     data.blocks.forEach(d => {
                         const b = createBlockMeshFromSave(d);
                         blocksContainer.add(b);
                     });
+                    // Restore project name from file
+                    if (data.name) document.getElementById('input-project-name').value = data.name;
+                    else {
+                        // Use filename (strip extension) as project name
+                        const nameFromFile = f.name.replace(/\.json$/i, '');
+                        document.getElementById('input-project-name').value = nameFromFile;
+                    }
                     updateLighting();
+                    // Auto-close the project modal
+                    document.getElementById('modal-project').style.display = 'none';
+                    fIn.value = ''; // reset for next load
                 }; r.readAsText(f);
             };
 
@@ -1592,88 +1652,134 @@
             if (hits.length > 0 && !isBulkMoveMode) {
                 const hit = hits[0];
                 let pt = hit.point.clone();
-                if (hit.object !== heightGuide) pt.add(hit.face.normal.clone().multiplyScalar(0.5));
+                if (hit.object !== heightGuide) pt.add(hit.face.normal.clone().multiplyScalar(0.5 * HEIGHT_UNIT));
 
-                // --- 1. Identify Context & Anchor ---
-                const currentY = Math.max(currentHeight, Math.round(pt.y - 0.5));
-                let snAnchor = new THREE.Vector3(0, 0, 0);
-                let isBaseSpecial = false;
+                // --- 1. Identify Context ---
+                const currentY = Math.max(currentHeight * HEIGHT_UNIT, Math.round(pt.y / HEIGHT_UNIT - 0.5) * HEIGHT_UNIT);
                 let baseBlock = null;
-
                 if (hit.object !== heightGuide) {
                     let obj = hit.object;
                     while (obj && obj.parent !== blocksContainer) obj = obj.parent;
                     baseBlock = obj;
-
-                    if (baseBlock) {
-                        const bType = baseBlock.userData.type.replace('-h2', '');
-                        const bShape = baseBlock.userData.shape;
-                        const is1Stud = (bType === 'jumper' || (bShape.w === 1 && bShape.d === 1));
-                        const isFlat = (bType === 'flat');
-
-                        if (is1Stud || isFlat) {
-                            isBaseSpecial = true;
-                            snAnchor.copy(baseBlock.position);
-                        }
-                    }
                 }
 
-                // --- 2. Calculate Snap Position ---
-                const snap = isHalfSnap ? 0.5 : 1.0;
+                // Supporting surface special status
+                const bType = baseBlock ? baseBlock.userData.type.replace('-h2', '') : 'ground';
+                const bShape = baseBlock ? baseBlock.userData.shape : { w: 1, d: 1 };
+                const isBaseSpecial = (bType === 'ground' || bType === 'flat' || bType === 'jumper' || (bShape.w === 1 && bShape.d === 1));
+
+                // Ghost block special status
+                const isInvSlope = selectedType.startsWith('inv-slope');
+                const isRelaxed = isBaseSpecial || isInvSlope;
+
+                // Snapping Math
+                const snap = (isHalfSnap || isRelaxed) ? 0.5 : 1.0;
                 const rot = (rotationAngle / 90) % 2 !== 0;
-                const eW = rot ? selectedShape.d : selectedShape.w;
-                const eD = rot ? selectedShape.w : selectedShape.d;
 
-                let candidatePos;
-                if (isBaseSpecial) {
-                    // RELATIVE SNAP: Origin is the supporting block/stud
-                    candidatePos = new THREE.Vector3(
-                        snAnchor.x + Math.round((pt.x - snAnchor.x) / snap) * snap,
-                        currentY,
-                        snAnchor.z + Math.round((pt.z - snAnchor.z) / snap) * snap
-                    );
-                } else {
-                    // WORLD GRID SNAP: Origin is world 0,0,0 (with parity offset)
-                    const off = (v, s) => { const c = (s % 2 === 0) ? 0 : 0.5; return Math.round((v - c) / snap) * snap + c; };
-                    candidatePos = new THREE.Vector3(off(pt.x, eW), currentY, off(pt.z, eD));
-                }
+                let curW = selectedShape.w;
+                let curD = selectedShape.d;
+                if (selectedType === '1x3-2s') { curW = 1; curD = 3; }
 
-                // --- 3. Optional Multi-Stud Alignment (Hole-to-Stud) ---
+                const eW = rot ? curD : curW;
+                const eD = rot ? curW : curD;
+
+                // --- Groove / Rail System ---
+                const isSquare = curW === curD;
+                const grooveInZ = !isSquare && eD >= eW;  // long axis = Z → groove in Z, rails in X
+                const grooveInX = !isSquare && eW > eD;   // long axis = X → groove in X, rails in Z
+
+                // --- 2. Primary Snapping (Rail-to-Stud) ---
                 let bestPos = null;
-                let minDist = 0.8;
+                let minDist = 1.5;
                 const studs = getStudsInWorld();
+                const relevantLevelStuds = studs.filter(s => Math.abs(s.y - currentY + HEIGHT_UNIT * 0.5) < HEIGHT_UNIT * 0.6);
 
-                studs.filter(s => Math.abs(s.y - (currentY - 0.5)) < 0.1).forEach(s => {
-                    for (let i = 0; i < eW; i++) {
-                        for (let j = 0; j < eD; j++) {
-                            const testPosX = s.x - (i - (eW - 1) / 2);
-                            const testPosZ = s.z - (j - (eD - 1) / 2);
-                            const dSq = (testPosX - pt.x) ** 2 + (testPosZ - pt.z) ** 2;
-                            if (dSq < minDist * minDist) {
-                                minDist = Math.sqrt(dSq);
-                                bestPos = new THREE.Vector3(testPosX, currentY, testPosZ);
+                if (!isInvSlope) {
+                    relevantLevelStuds.forEach(stud => {
+                        if (!grooveInX) {
+                            // groove in Z (or square): rails in X
+                            for (let i = 0; i < eW; i++) {
+                                const railOff = i - (eW - 1) / 2;
+                                const testBx = stud.x - railOff;
+                                const testBz = Math.round(pt.z / 0.5) * 0.5;
+                                const dist = Math.sqrt((testBx - pt.x) ** 2 + (testBz - pt.z) ** 2);
+                                if (dist < minDist) { minDist = dist; bestPos = new THREE.Vector3(testBx, currentY, testBz); }
                             }
                         }
+                        if (grooveInX || isSquare) {
+                            // groove in X (or square): rails in Z
+                            for (let j = 0; j < eD; j++) {
+                                const railOff = j - (eD - 1) / 2;
+                                const testBz = stud.z - railOff;
+                                const testBx = Math.round(pt.x / 0.5) * 0.5;
+                                const dist = Math.sqrt((testBx - pt.x) ** 2 + (testBz - pt.z) ** 2);
+                                if (dist < minDist) { minDist = dist; bestPos = new THREE.Vector3(testBx, currentY, testBz); }
+                            }
+                        }
+                    });
+                }
+
+                // --- 3. Fallback Snapping (groove-aware grid) ---
+                let candidatePos;
+                {
+                    const offInt = (v, eSize) => { const c = (eSize % 2 === 0) ? 0 : 0.5; return Math.round((v - c)) + c; };
+                    const offHalf = (v) => Math.round(v / 0.5) * 0.5;
+                    let fx, fz;
+                    // If no studs are nearby OR inv-slope, allow free 0.5 placement in both axes
+                    const hasNearbyStuds = relevantLevelStuds.length > 0;
+                    if (!hasNearbyStuds || isInvSlope) {
+                        // Free 0.5 snap in both directions
+                        fx = offHalf(pt.x); fz = offHalf(pt.z);
+                    } else if (baseBlock) {
+                        const bX = baseBlock.position.x, bZ = baseBlock.position.z;
+                        if (grooveInX) { fx = offHalf(pt.x); fz = bZ + Math.round(pt.z - bZ); }
+                        else { fx = bX + Math.round(pt.x - bX); fz = offHalf(pt.z); }
+                    } else if (grooveInX) {
+                        fx = offHalf(pt.x); fz = offInt(pt.z, eD);
+                    } else {
+                        fx = offInt(pt.x, eW); fz = offHalf(pt.z);
                     }
-                });
+                    candidatePos = new THREE.Vector3(fx, currentY, fz);
+                }
 
                 ghostBlock.position.copy(bestPos || candidatePos);
 
-                // --- 4. Validation (Stud Illegal & AABB Collision) ---
-                const holes = getHolesInWorld(ghostBlock.position, ghostBlock.rotation.y, selectedShape, selectedType);
-                const relevantStuds = studs.filter(s => Math.abs(s.y - (ghostBlock.position.y - 0.5)) < 0.1);
-
+                // --- 4. Validation: Groove System ---
                 let isIllegal = false;
-                holes.forEach(hole => {
-                    relevantStuds.forEach(stud => {
-                        const dx = Math.abs(hole.x - stud.x);
-                        const dz = Math.abs(hole.z - stud.z);
-                        if (dx < 0.8 && dz < 0.8) {
-                            // If base is NOT special, we require strict alignment (>0.1 dev is illegal)
-                            if (!isBaseSpecial && (dx > 0.1 || dz > 0.1)) isIllegal = true;
+                if (!isInvSlope) {
+                    const ghostBx = ghostBlock.position.x;
+                    const ghostBz = ghostBlock.position.z;
+                    const halfEW = eW / 2;
+                    const halfED = eD / 2;
+
+                    // Checks if stud fits in groove: 'groove' axis must have 0.5 clearance from block ends,
+                    // 'rail' axis must align with one of the actual rail columns (not necessarily integer)
+                    const fitsGroove = (rail, groove, eRail, eGroove) => {
+                        if (Math.abs(groove) > eGroove / 2 - 0.45) return false; // end-wall collision
+                        for (let ri = 0; ri < eRail; ri++) {
+                            const railPos = ri - (eRail - 1) / 2;
+                            if (Math.abs(rail - railPos) < 0.3) return true; // aligned with this rail
+                        }
+                        return false; // not aligned with any rail
+                    };
+
+                    relevantLevelStuds.forEach(stud => {
+                        const lx = stud.x - ghostBx;
+                        const lz = stud.z - ghostBz;
+                        // Ignore studs completely outside the block footprint
+                        if (Math.abs(lx) >= halfEW + 0.05 || Math.abs(lz) >= halfED + 0.05) return;
+
+                        if (isSquare) {
+                            const okA = fitsGroove(lx, lz, eW, eD); // groove in Z
+                            const okB = fitsGroove(lz, lx, eD, eW); // groove in X
+                            if (!okA && !okB) isIllegal = true;
+                        } else if (!grooveInX) {
+                            if (!fitsGroove(lx, lz, eW, eD)) isIllegal = true;
+                        } else {
+                            if (!fitsGroove(lz, lx, eD, eW)) isIllegal = true;
                         }
                     });
-                });
+                }
 
                 let isCollision = false;
                 const gBody = ghostBlock.children[0];
