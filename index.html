@@ -1275,20 +1275,33 @@
             let longPressTimer = null;
             let movedDuringTouch = false;
 
-            const getTouchMousePos = (e) => {
+            const getTouchMousePos = (e, applyOffset = false) => {
                 const touch = e.touches[0] || e.changedTouches[0];
+                const offsetY = applyOffset ? -70 : 0; // Move target 70px above finger on mobile
+                const clientX = touch.clientX;
+                const clientY = touch.clientY + offsetY;
                 return {
-                    x: (touch.clientX / window.innerWidth) * 2 - 1,
-                    y: -(touch.clientY / window.innerHeight) * 2 + 1,
-                    clientX: touch.clientX,
-                    clientY: touch.clientY
+                    x: (clientX / window.innerWidth) * 2 - 1,
+                    y: -(clientY / window.innerHeight) * 2 + 1,
+                    clientX,
+                    clientY
+                };
+            };
+
+            const getGhostScreenPos = () => {
+                const vector = new THREE.Vector3();
+                ghostBlock.getWorldPosition(vector);
+                vector.project(camera);
+                return {
+                    x: (vector.x * 0.5 + 0.5) * window.innerWidth,
+                    y: (-(vector.y * 0.5) + 0.5) * window.innerHeight
                 };
             };
 
             renderer.domElement.addEventListener('touchstart', (e) => {
                 if (e.touches.length > 1) return;
                 touchStartTime = Date.now();
-                const pos = getTouchMousePos(e);
+                const pos = getTouchMousePos(e, false);
                 touchStartX = pos.clientX;
                 touchStartY = pos.clientY;
                 movedDuringTouch = false;
@@ -1296,13 +1309,16 @@
                 // Update mouse for raycasting
                 mouse.x = pos.x;
                 mouse.y = pos.y;
-
-                // Check if touching ghost or existing block
                 raycaster.setFromCamera(mouse, camera);
-                const ghostHit = raycaster.intersectObject(ghostBlock, true);
-                if (ghostHit.length > 0) {
+
+                // Distance check is more reliable than raycast for tiny ghost
+                const ghostScreen = getGhostScreenPos();
+                const distToGhost = Math.sqrt((pos.clientX - ghostScreen.x) ** 2 + (pos.clientY - ghostScreen.y) ** 2);
+
+                if (distToGhost < 50) { // 50px tolerance
                     isDraggingGhost = true;
                     controls.enabled = false;
+                    ghostBlock.scale.set(1.1, 1.1, 1.1); // Pulse feedback
                 }
 
                 // Long press detection for picking up
@@ -1313,55 +1329,49 @@
                     while (target.parent !== blocksContainer) target = target.parent;
                     longPressTimer = setTimeout(() => {
                         pickUpBlock(target);
-                        isDraggingGhost = true; // Drag the picked up block immediately
+                        isDraggingGhost = true;
                         controls.enabled = false;
+                        ghostBlock.scale.set(1.1, 1.1, 1.1);
                         longPressTimer = null;
-                    }, 600);
+                    }, 500);
                 }
             }, { passive: false });
 
             renderer.domElement.addEventListener('touchmove', (e) => {
                 if (e.touches.length > 1) return;
-                const pos = getTouchMousePos(e);
-                const dist = Math.sqrt((pos.clientX - touchStartX) ** 2 + (pos.clientY - touchStartY) ** 2);
-                if (dist > 10) {
+                const posActual = getTouchMousePos(e, false);
+                const dist = Math.sqrt((posActual.clientX - touchStartX) ** 2 + (posActual.clientY - touchStartY) ** 2);
+
+                if (dist > 15) {
                     movedDuringTouch = true;
-                    if (longPressTimer) {
-                        clearTimeout(longPressTimer);
-                        longPressTimer = null;
-                    }
+                    if (longPressTimer) { clearTimeout(longPressTimer); longPressTimer = null; }
                 }
 
                 if (isDraggingGhost) {
-                    // Force mouse update and call onMouseMove
-                    mouse.x = pos.x;
-                    mouse.y = pos.y;
-                    onMouseMove(pos);
+                    const posOffset = getTouchMousePos(e, true); // Use offset for dragging
+                    mouse.x = posOffset.x;
+                    mouse.y = posOffset.y;
+                    onMouseMove({ ...posOffset, isTouch: true });
                     e.preventDefault();
                 }
             }, { passive: false });
 
             renderer.domElement.addEventListener('touchend', (e) => {
                 const duration = Date.now() - touchStartTime;
-                if (longPressTimer) {
-                    clearTimeout(longPressTimer);
-                    longPressTimer = null;
-                }
+                if (longPressTimer) { clearTimeout(longPressTimer); longPressTimer = null; }
 
                 if (isDraggingGhost) {
                     isDraggingGhost = false;
                     controls.enabled = true;
+                    ghostBlock.scale.set(1, 1, 1);
                 }
 
-                if (!movedDuringTouch && duration < 300) {
-                    const pos = getTouchMousePos(e);
-                    mouse.x = pos.x;
-                    mouse.y = pos.y;
+                if (!movedDuringTouch && duration < 400) {
+                    const pos = getTouchMousePos(e, false);
+                    const ghostScreen = getGhostScreenPos();
+                    const distToGhost = Math.sqrt((pos.clientX - ghostScreen.x) ** 2 + (pos.clientY - ghostScreen.y) ** 2);
 
-                    raycaster.setFromCamera(mouse, camera);
-                    const ghostHit = raycaster.intersectObject(ghostBlock, true);
-                    if (ghostHit.length > 0) {
-                        // Tap on ghost -> PLACE
+                    if (distToGhost < 60) {
                         onMouseDown({
                             clientX: pos.clientX,
                             clientY: pos.clientY,
@@ -2033,7 +2043,7 @@
         function onMouseMove(event) {
             mouse.x = (event.clientX / window.innerWidth) * 2 - 1;
             mouse.y = -(event.clientY / window.innerHeight) * 2 + 1;
-            if (event.target !== renderer.domElement) { ghostBlock.visible = false; return; }
+            if (event.target !== renderer.domElement && !event.isTouch) { ghostBlock.visible = false; return; }
 
             raycaster.setFromCamera(mouse, camera);
 
