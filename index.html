@@ -1277,7 +1277,7 @@
 
             const getTouchMousePos = (e, applyOffset = false) => {
                 const touch = e.touches[0] || e.changedTouches[0];
-                const offsetY = applyOffset ? -70 : 0; // Move target 70px above finger on mobile
+                const offsetY = applyOffset ? -40 : 0; // Move target 40px above finger on mobile (reduced from 70)
                 const clientX = touch.clientX;
                 const clientY = touch.clientY + offsetY;
                 return {
@@ -1319,21 +1319,23 @@
                     isDraggingGhost = true;
                     controls.enabled = false;
                     ghostBlock.scale.set(1.1, 1.1, 1.1); // Pulse feedback
-                }
-
-                // Long press detection for picking up
-                const visibleBlocks = blocksContainer.children.filter(b => b.visible);
-                const blockHits = raycaster.intersectObjects(visibleBlocks, true);
-                if (blockHits.length > 0) {
-                    let target = blockHits[0].object;
-                    while (target.parent !== blocksContainer) target = target.parent;
-                    longPressTimer = setTimeout(() => {
-                        pickUpBlock(target);
-                        isDraggingGhost = true;
-                        controls.enabled = false;
-                        ghostBlock.scale.set(1.1, 1.1, 1.1);
-                        longPressTimer = null;
-                    }, 500);
+                    e.preventDefault(); // Stop synthetic mouse events
+                } else {
+                    // Long press detection for picking up (only if not dragging ghost)
+                    const visibleBlocks = blocksContainer.children.filter(b => b.visible);
+                    const blockHits = raycaster.intersectObjects(visibleBlocks, true);
+                    if (blockHits.length > 0) {
+                        e.preventDefault(); // Stop synthetic mouse events
+                        let target = blockHits[0].object;
+                        while (target.parent !== blocksContainer) target = target.parent;
+                        longPressTimer = setTimeout(() => {
+                            pickUpBlock(target);
+                            isDraggingGhost = true;
+                            controls.enabled = false;
+                            ghostBlock.scale.set(1.1, 1.1, 1.1);
+                            longPressTimer = null;
+                        }, 500);
+                    }
                 }
             }, { passive: false });
 
@@ -1367,11 +1369,14 @@
                 }
 
                 if (!movedDuringTouch && duration < 400) {
+                    // For tapping, we use the actual finger position (no offset)
+                    // but we allow a slightly larger hit area because the ghost might be offset slightly above
                     const pos = getTouchMousePos(e, false);
                     const ghostScreen = getGhostScreenPos();
                     const distToGhost = Math.sqrt((pos.clientX - ghostScreen.x) ** 2 + (pos.clientY - ghostScreen.y) ** 2);
 
-                    if (distToGhost < 60) {
+                    if (distToGhost < 70) { // Increased tapping tolerance since ghost is 40px above finger
+                        // Use CURRENT ghost position instead of re-raycasting with finger pos
                         onMouseDown({
                             clientX: pos.clientX,
                             clientY: pos.clientY,
@@ -1379,7 +1384,10 @@
                             target: renderer.domElement,
                             preventDefault: () => { }
                         });
+                        e.preventDefault(); // Stop synthetic events that cause jumps
                     }
+                } else if (isDraggingGhost) {
+                    e.preventDefault();
                 }
             }, { passive: false });
 
@@ -1444,22 +1452,28 @@
             const d = block.userData;
 
             // Restore State
-            selectedColor = { hex: d.hex, isClear: d.isClear };
-            selectedType = d.type;
-            const knownShape = SHAPES.find(s => s.w === d.w && s.d === d.d && s.id !== 'カスタム');
+            // Fix: it's saved as 'color' in createBlockMesh, not 'hex'
+            selectedColor = { hex: d.color || "#ffffff", isClear: d.isClear || false };
+            selectedType = d.type || 'box';
+
+            const shape = d.shape || { w: 1, d: 1 };
+            const knownShape = SHAPES.find(s => s.w === shape.w && s.d === shape.d && s.id !== 'カスタム');
             if (knownShape) {
                 selectedShape = knownShape;
             } else {
-                selectedShape = { id: 'custom', w: d.w, d: d.d };
+                selectedShape = { id: 'custom', w: shape.w, d: shape.d };
             }
-            currentHeight = d.y / HEIGHT_UNIT;
+
+            // d.y is important for pick-up!
+            const blockY = (d.y !== undefined) ? d.y : block.position.y;
+            currentHeight = Math.round(blockY / HEIGHT_UNIT * 100) / 100;
 
             // Reflect in UI
-            document.getElementById('input-w').value = document.getElementById('m-input-w').value = d.w;
-            document.getElementById('input-d').value = document.getElementById('m-input-d').value = d.d;
-            document.getElementById('select-type').value = document.getElementById('m-select-type').value = d.type;
+            document.getElementById('input-w').value = document.getElementById('m-input-w').value = shape.w;
+            document.getElementById('input-d').value = document.getElementById('m-input-d').value = shape.d;
+            document.getElementById('select-type').value = document.getElementById('m-select-type').value = selectedType;
             document.getElementById('label-h').textContent = document.getElementById('m-label-h').textContent = `H: ${currentHeight}`;
-            heightGuide.position.y = d.y;
+            heightGuide.position.y = blockY;
 
             renderPalette();
             if (window.renderShapesMobile) window.renderShapesMobile();
@@ -1469,6 +1483,8 @@
             updateLightPositions();
             updateLayerVisibility();
             createGhostBlock();
+            // Close any open panels if we just picked something up (starts a "new" drag)
+            if (typeof closeAllPanels === 'function') closeAllPanels();
         }
 
         function getStudsInWorld() {
@@ -1731,10 +1747,11 @@
             const panels = document.querySelectorAll('.slide-panel');
             const backdrop = document.getElementById('panel-backdrop');
 
-            function closeAllPanels() {
+            window.closeAllPanels = () => {
                 panels.forEach(p => p.classList.remove('open'));
                 backdrop.style.display = 'none';
-            }
+            };
+            const closeAllPanels = window.closeAllPanels;
 
             function toggleSlidePanel(id) {
                 const p = document.getElementById(id);
@@ -1823,7 +1840,7 @@
                                 document.getElementById('input-d').value = document.getElementById('m-input-d').value = shape.d;
                             }
                             createGhostBlock();
-                            // If mobile, close after selection? Maybe keep open for adjustments
+                            closeAllPanels();
                         };
                         grid.appendChild(b);
                     });
@@ -1847,7 +1864,12 @@
                     createGhostBlock();
                 };
                 pcEl.oninput = pcEl.onchange = () => update(pcEl);
-                if (mEl) mEl.oninput = mEl.onchange = () => update(mEl);
+                if (mEl) {
+                    mEl.oninput = mEl.onchange = () => {
+                        update(mEl);
+                        if (prop === 'type') closeAllPanels(); // Close when changing type on mobile
+                    };
+                }
             };
 
             syncInputs('input-w', 'm-input-w', 'w');
@@ -2198,7 +2220,7 @@
                 let isCollision = false;
                 const gBody = ghostBlock.children[0];
                 const gB = new THREE.Box3().setFromObject(gBody);
-                gB.expandByScalar(-0.05);
+                gB.expandByScalar(-0.1); // Relaxed margin from 0.05 to 0.1 for easier mobile placement
 
                 const visibleBlocks = blocksContainer.children.filter(b => b.visible);
                 for (let i = 0; i < visibleBlocks.length; i++) {
@@ -2207,7 +2229,7 @@
 
                     const tBody = targetB.children[0];
                     const tB = new THREE.Box3().setFromObject(tBody);
-                    tB.expandByScalar(-0.05);
+                    tB.expandByScalar(-0.1); // Match the relaxation
 
                     if (gB.intersectsBox(tB)) {
                         isCollision = true;
@@ -2249,6 +2271,8 @@
             if (e.button === 0 && ghostBlock.visible && canPlace) {
                 const b = createBlockMesh(selectedColor.hex, selectedShape, selectedType, false, selectedColor.isClear);
                 b.position.copy(ghostBlock.position); b.rotation.copy(ghostBlock.rotation);
+                // Save Y in userData for future pickUpBlock calls
+                b.userData.y = ghostBlock.position.y;
                 blocksContainer.add(b);
                 updateLightPositions();
                 updateLayerVisibility(); // Ensure visibility is correct for new block
