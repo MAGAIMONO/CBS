@@ -177,6 +177,18 @@
             display: flex;
         }
 
+        .color-swatch.is-clear::after {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: linear-gradient(45deg, transparent 45%, rgba(255, 255, 255, 0.6) 45%, rgba(255, 255, 255, 0.6) 55%, transparent 55%);
+            border-radius: inherit;
+            pointer-events: none;
+        }
+
         #btn-add-color {
             width: 28px;
             height: 28px;
@@ -569,12 +581,7 @@
                     <div class="group-label">パレット</div>
                     <div class="color-palette palette-container">
                         <div id="btn-add-color" title="現在の選択色を追加">+</div>
-                        <input type="color" id="custom-color-input">
                     </div>
-                    <label
-                        style="font-size:0.65rem; opacity:0.7; cursor:pointer; display:flex; align-items:center; gap:5px; margin-top:5px;">
-                        <input type="checkbox" id="check-clear"> クリアパーツ (透過)
-                    </label>
                 </div>
                 <div class="divider"></div>
                 <div class="control-group">
@@ -713,6 +720,31 @@
         </div>
     </div>
 
+    <!-- Color Edit Modal -->
+    <div id="modal-color-edit" class="modal-overlay">
+        <div class="modal-content glass-panel">
+            <div class="modal-header">
+                <h2 id="color-edit-title">カラー追加</h2>
+                <button class="close-modal" id="btn-close-color-edit">&times;</button>
+            </div>
+            <div class="control-group">
+                <div class="group-label">色の選択</div>
+                <input type="color" id="input-edit-color"
+                    style="width: 100%; height: 40px; background: none; border: 1px solid var(--glass-border); border-radius: 8px; cursor: pointer;">
+            </div>
+            <div class="control-group">
+                <label style="font-size:0.9rem; cursor:pointer; display:flex; align-items:center; gap:10px;">
+                    <input type="checkbox" id="check-edit-clear"> <strong>クリアパーツ (透過)</strong>
+                </label>
+                <p style="font-size:0.7rem; opacity:0.6;">光を通す透明なブロックにします</p>
+            </div>
+            <button class="action-btn accent" id="btn-apply-color"
+                style="background: var(--accent); color: #000; width: 100%; justify-content: center; margin-top: 5px;">
+                決定
+            </button>
+        </div>
+    </div>
+
     <!-- Project Modal -->
     <div id="modal-project" class="modal-overlay">
         <div class="modal-content glass-panel">
@@ -756,7 +788,16 @@
         const GRID_SIZE = 20;
         const GRID_DIVISIONS = 20;
         const BLOCK_SIZE = 1;
-        const DEFAULT_COLORS = ['#ffffff', '#1a1a1a', '#e63946', '#457b9d', '#70e000', '#ffb703', '#8338ec', '#fb5607'];
+        const DEFAULT_COLORS = [
+            { hex: '#ffffff', isClear: false },
+            { hex: '#1a1a1a', isClear: false },
+            { hex: '#e63946', isClear: false },
+            { hex: '#457b9d', isClear: false },
+            { hex: '#70e000', isClear: false },
+            { hex: '#ffb703', isClear: false },
+            { hex: '#8338ec', isClear: false },
+            { hex: '#fb5607', isClear: false }
+        ];
         const SHAPES = [
             { id: '1x1', w: 1, d: 1 }, { id: '1x2', w: 1, d: 2 }, { id: '1x3', w: 1, d: 3 }, { id: '1x4', w: 1, d: 4 },
             { id: '2x2', w: 2, d: 2 }, { id: '2x3', w: 2, d: 3 }, { id: '2x4', w: 2, d: 4 }, { id: 'カスタム', w: -1, d: -1 }
@@ -811,21 +852,31 @@
             }
         }
 
-        function updateAllBlocksColor(oldColor, newColor) {
+        function updateAllBlocksColor(oldColorObj, newHex, newIsClear) {
             blocksContainer.children.forEach(block => {
-                if (block.userData.color === oldColor) {
-                    block.userData.color = newColor;
+                if (block.userData.color === oldColorObj.hex && (block.userData.isClear || false) === oldColorObj.isClear) {
+                    block.userData.color = newHex;
+                    block.userData.isClear = newIsClear;
                     block.traverse(child => {
                         if (child.isMesh) {
-                            child.material.color.set(newColor);
+                            child.material.color.set(newHex);
+                            child.material.transparent = newIsClear;
+                            child.material.opacity = newIsClear ? 0.8 : 1.0;
+                            child.material.roughness = newIsClear ? 0.05 : 0.2;
+                            child.material.metalness = newIsClear ? 0.4 : 0.2;
+                            child.material.needsUpdate = true;
                         }
                     });
                 }
             });
             // Update palette too
-            const idx = currentPalette.indexOf(oldColor);
-            if (idx !== -1) currentPalette[idx] = newColor;
-            if (selectedColor === oldColor) selectedColor = newColor;
+            const idx = currentPalette.findIndex(c => c.hex === oldColorObj.hex && c.isClear === oldColorObj.isClear);
+            if (idx !== -1) {
+                currentPalette[idx] = { hex: newHex, isClear: newIsClear };
+            }
+            if (selectedColor.hex === oldColorObj.hex && selectedColor.isClear === oldColorObj.isClear) {
+                selectedColor = { hex: newHex, isClear: newIsClear };
+            }
             renderPalette();
             createGhostBlock();
         }
@@ -1138,13 +1189,13 @@
             return b;
         }
 
-        function createBlockMesh(color, shape, type, isGhost = false, clearOverride = null) {
+        function createBlockMesh(color, shape, type, isGhost = false, clearOverride = false) {
             const group = new THREE.Group();
             const w = shape.w;
             const d = shape.d;
             const isH2 = type.endsWith('-h2');
             const h = isH2 ? BLOCK_SIZE * 2 : BLOCK_SIZE;
-            const isClearBlock = clearOverride !== null ? clearOverride : (isGhost ? isClear : false);
+            const isClearBlock = clearOverride;
 
             const mat = new THREE.MeshStandardMaterial({
                 color: color,
@@ -1212,7 +1263,7 @@
 
         function createGhostBlock() {
             if (ghostBlock) scene.remove(ghostBlock);
-            ghostBlock = createBlockMesh(selectedColor, selectedShape, selectedType, true);
+            ghostBlock = createBlockMesh(selectedColor.hex, selectedShape, selectedType, true, selectedColor.isClear);
             ghostBlock.rotation.y = THREE.MathUtils.degToRad(rotationAngle);
             scene.add(ghostBlock);
         }
@@ -1263,17 +1314,25 @@
             const addBtn = document.getElementById('btn-add-color');
             container.querySelectorAll('.color-swatch').forEach(s => s.remove());
 
-            currentPalette.forEach((color, idx) => {
+            currentPalette.forEach((colorObj) => {
                 const s = document.createElement('div');
-                s.className = 'color-swatch' + (color === selectedColor ? ' active' : '');
-                s.style.backgroundColor = color;
-                s.onclick = () => { selectedColor = color; renderPalette(); createGhostBlock(); };
+                s.className = 'color-swatch';
+                if (colorObj.hex === selectedColor.hex && colorObj.isClear === selectedColor.isClear) {
+                    s.classList.add('active');
+                }
+                if (colorObj.isClear) s.classList.add('is-clear');
 
-                // Custom context menu logic
+                s.style.backgroundColor = colorObj.hex;
+                s.onclick = () => {
+                    selectedColor = colorObj;
+                    renderPalette();
+                    createGhostBlock();
+                };
+
                 s.oncontextmenu = (e) => {
                     e.preventDefault();
                     e.stopPropagation();
-                    showContextMenu(e.clientX, e.clientY, color);
+                    showContextMenu(e.clientX, e.clientY, colorObj);
                 };
 
                 container.insertBefore(s, addBtn);
@@ -1281,12 +1340,41 @@
         }
 
         function initUI() {
-            const customIn = document.getElementById('custom-color-input');
-            document.getElementById('btn-add-color').onclick = () => customIn.click();
-            customIn.oninput = (e) => { selectedColor = e.target.value; createGhostBlock(); };
-            customIn.onchange = (e) => {
-                if (!currentPalette.includes(e.target.value)) { currentPalette.push(e.target.value); renderPalette(); }
+            const modalColorEdit = document.getElementById('modal-color-edit');
+            const inputEditColor = document.getElementById('input-edit-color');
+            const checkEditClear = document.getElementById('check-edit-clear');
+            const btnApplyColor = document.getElementById('btn-apply-color');
+
+            document.getElementById('btn-add-color').onclick = () => {
+                isEditingMode = false;
+                document.getElementById('color-edit-title').textContent = "カラー追加";
+                inputEditColor.value = selectedColor.hex;
+                checkEditClear.checked = false;
+                modalColorEdit.style.display = 'flex';
             };
+
+            document.getElementById('btn-close-color-edit').onclick = () => {
+                modalColorEdit.style.display = 'none';
+            };
+
+            btnApplyColor.onclick = () => {
+                const newHex = inputEditColor.value;
+                const newIsClear = checkEditClear.checked;
+
+                if (isEditingMode) {
+                    updateAllBlocksColor(contextMenuColor, newHex, newIsClear);
+                } else {
+                    const exists = currentPalette.some(c => c.hex === newHex && c.isClear === newIsClear);
+                    if (!exists) {
+                        currentPalette.push({ hex: newHex, isClear: newIsClear });
+                    }
+                    selectedColor = { hex: newHex, isClear: newIsClear };
+                    renderPalette();
+                    createGhostBlock();
+                }
+                modalColorEdit.style.display = 'none';
+            };
+
             renderPalette();
 
             const shapesGrid = document.querySelector('.shapes-grid');
@@ -1326,7 +1414,6 @@
             document.getElementById('btn-h-up').onclick = () => updateH(1);
             document.getElementById('btn-h-down').onclick = () => updateH(-1);
             document.getElementById('check-half-snap').onchange = (e) => isHalfSnap = e.target.checked;
-            document.getElementById('check-clear').onchange = (e) => { isClear = e.target.checked; createGhostBlock(); };
             document.getElementById('check-layer-mode').onchange = (e) => { isLayerEditMode = e.target.checked; updateLayerVisibility(); };
             document.getElementById('btn-layer-insert').onclick = () => { if (confirm("現在選択中の高さにあるブロックを1段上に押し上げて、ここに空欄を作りますか？")) insertLayer(); };
             document.getElementById('btn-layer-delete').onclick = () => { if (confirm("現在のレイヤーを削除し、上の段を下げますか？")) deleteLayer(); };
@@ -1372,8 +1459,10 @@
 
             document.getElementById('btn-rotate').onclick = () => { rotationAngle = (rotationAngle + 90) % 360; createGhostBlock(); };
             document.getElementById('btn-clear').onclick = () => {
-                while (blocksContainer.children.length > 0) blocksContainer.remove(blocksContainer.children[0]);
-                updateLightPositions();
+                if (confirm("すべてのブロックを削除しますか？")) {
+                    while (blocksContainer.children.length > 0) blocksContainer.remove(blocksContainer.children[0]);
+                    updateLightPositions();
+                }
             };
             document.getElementById('btn-screenshot').onclick = () => { const a = document.createElement('a'); a.download = 'render.png'; a.href = renderer.domElement.toDataURL(); a.click(); };
             document.getElementById('btn-view-mode').onclick = () => toggleViewMode(true);
@@ -1381,21 +1470,25 @@
 
             // Context Menu Items
             document.getElementById('menu-remove-color').onclick = () => {
-                const color = contextMenuColor;
-                const idx = currentPalette.indexOf(color);
+                if (currentPalette.length <= 1) return;
+                const idx = currentPalette.findIndex(c => c.hex === contextMenuColor.hex && c.isClear === contextMenuColor.isClear);
                 if (idx !== -1) {
                     currentPalette.splice(idx, 1);
-                    if (selectedColor === color) selectedColor = currentPalette[0] || '#ffffff';
+                    if (selectedColor.hex === contextMenuColor.hex && selectedColor.isClear === contextMenuColor.isClear) {
+                        selectedColor = currentPalette[0];
+                    }
                     renderPalette();
+                    createGhostBlock();
                 }
                 hideContextMenu();
             };
             document.getElementById('menu-change-color').onclick = () => {
-                document.getElementById('change-color-input').click();
+                isEditingMode = true;
+                document.getElementById('color-edit-title').textContent = "色を変更";
+                inputEditColor.value = contextMenuColor.hex;
+                checkEditClear.checked = contextMenuColor.isClear;
+                modalColorEdit.style.display = 'flex';
                 hideContextMenu();
-            };
-            document.getElementById('change-color-input').onchange = (e) => {
-                updateAllBlocksColor(contextMenuColor, e.target.value);
             };
 
             window.addEventListener('click', hideContextMenu);
@@ -1413,8 +1506,11 @@
                 const r = new FileReader();
                 r.onload = (re) => {
                     const data = JSON.parse(re.target.result);
-                    if (data.palette) currentPalette = data.palette;
-                    selectedColor = currentPalette[0] || '#ffffff';
+                    if (data.palette) {
+                        // Data migration: if old format (string), convert to objects
+                        currentPalette = data.palette.map(c => typeof c === 'string' ? { hex: c, isClear: false } : c);
+                    }
+                    selectedColor = currentPalette[0] || DEFAULT_COLORS[0];
                     renderPalette();
                     while (blocksContainer.children.length > 0) blocksContainer.remove(blocksContainer.children[0]);
                     data.blocks.forEach(d => {
@@ -1457,7 +1553,7 @@
             heightGuide.position.y = currentHeight;
 
             // Reset Palette
-            currentPalette = [...DEFAULT_COLORS];
+            currentPalette = JSON.parse(JSON.stringify(DEFAULT_COLORS));
             selectedColor = currentPalette[1]; // default to black
             renderPalette();
 
@@ -1631,7 +1727,7 @@
             }
 
             if (e.button === 0 && ghostBlock.visible && canPlace) {
-                const b = createBlockMesh(selectedColor, selectedShape, selectedType, false, isClear);
+                const b = createBlockMesh(selectedColor.hex, selectedShape, selectedType, false, selectedColor.isClear);
                 b.position.copy(ghostBlock.position); b.rotation.copy(ghostBlock.rotation);
                 blocksContainer.add(b);
                 updateLightPositions();
