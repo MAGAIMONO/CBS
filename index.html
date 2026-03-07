@@ -552,6 +552,110 @@
         .menu-item.danger:hover {
             color: #ff4d4d;
         }
+
+        /* Mobile Responsive UI */
+        #bottom-toolbar {
+            position: fixed;
+            bottom: 25px;
+            left: 0;
+            width: 100%;
+            display: none;
+            /* Only show on mobile */
+            justify-content: space-evenly;
+            align-items: center;
+            padding: 0 10px;
+            box-sizing: border-box;
+            z-index: 3000;
+            pointer-events: auto;
+        }
+
+        .tb-btn {
+            width: 60px;
+            height: 60px;
+            border-radius: 30px;
+            background: var(--glass-bg);
+            backdrop-filter: blur(15px);
+            border: 1px solid var(--glass-border);
+            color: #fff;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 1.5rem;
+            cursor: pointer;
+            box-shadow: var(--panel-shadow);
+            transition: transform 0.2s, background 0.2s;
+        }
+
+        .tb-btn:active {
+            transform: scale(0.9);
+            background: rgba(255, 255, 255, 0.1);
+        }
+
+        .slide-panel {
+            position: fixed;
+            bottom: 0;
+            left: 0;
+            width: 100%;
+            background: var(--glass-bg);
+            backdrop-filter: blur(20px);
+            border-top: 1px solid var(--glass-border);
+            border-radius: 20px 20px 0 0;
+            padding: 20px;
+            box-sizing: border-box;
+            transform: translateY(100%);
+            transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+            z-index: 3200;
+            display: flex;
+            flex-direction: column;
+            gap: 15px;
+            pointer-events: auto;
+        }
+
+        .slide-panel.open {
+            transform: translateY(0);
+        }
+
+        .panel-backdrop {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.4);
+            display: none;
+            z-index: 3100;
+        }
+
+        .mobile-only {
+            display: none;
+        }
+
+        @media (max-width: 768px) {
+
+            header,
+            #instructions,
+            #bottom-controls {
+                display: none !important;
+            }
+
+            #bottom-toolbar {
+                display: flex;
+            }
+
+            .slide-panel {
+                display: flex;
+            }
+
+            .mobile-only {
+                display: block;
+            }
+
+            /* Adjust padding for scene to not be hidden by toolbar */
+            #ui-container {
+                height: 100%;
+                justify-content: flex-end;
+            }
+        }
     </style>
 </head>
 
@@ -786,6 +890,91 @@
     </div>
     <input type="color" id="change-color-input" style="display:none;">
 
+    <!-- Mobile UI Elements -->
+    <div id="panel-backdrop" class="panel-backdrop"></div>
+
+    <div id="bottom-toolbar">
+        <div class="tb-btn" id="tb-color" title="カラー">🎨</div>
+        <div class="tb-btn" id="tb-shape" title="形状">📐</div>
+        <div class="tb-btn" id="tb-height" title="高さ">📏</div>
+        <div class="tb-btn" id="tb-rotate-direct" title="回転">↻</div>
+        <div class="tb-btn" id="tb-trash" title="削除モード">🗑️</div>
+        <div class="tb-btn" id="tb-settings" title="管理">⚙️</div>
+    </div>
+
+    <!-- Color Panel -->
+    <div id="panel-colors" class="slide-panel">
+        <div class="group-label">カラーパレット</div>
+        <div id="mobile-palette" class="color-palette palette-container">
+            <!-- Will be mirrored via JS -->
+        </div>
+        <button class="action-btn accent" id="m-btn-add-color-open"
+            style="width:100%; justify-content:center; margin-top:10px;">新しい色を追加</button>
+    </div>
+
+    <!-- Shape Panel -->
+    <div id="panel-shapes" class="slide-panel">
+        <div class="group-label">形状プリセット</div>
+        <div id="mobile-shapes-grid" class="shapes-grid">
+            <!-- Will be mirrored via JS -->
+        </div>
+        <div class="divider" style="width:100%; height:1px; margin:10px 0;"></div>
+        <div class="group-label">カスタムサイズ</div>
+        <div style="display:flex; gap:1rem; align-items:center; justify-content:center; padding:5px 0;">
+            <span style="font-size:0.8rem; opacity:0.6;">W</span><input type="number" id="m-input-w"
+                class="numeric-input" value="1" min="1" max="10" style="width:50px;">
+            <span style="font-size:0.8rem; opacity:0.6;">D</span><input type="number" id="m-input-d"
+                class="numeric-input" value="1" min="1" max="10" style="width:50px;">
+        </div>
+        <div class="group-label">ブロックの種類</div>
+        <select id="m-select-type"
+            style="width:100%; padding:8px; background:rgba(0,0,0,0.3); color:#fff; border:1px solid var(--glass-border); border-radius:6px;">
+            <option value="box">通常ブロック</option>
+            <option value="slope">スロープ (順)</option>
+            <option value="slope-h2">スロープ (順・高)</option>
+            <option value="inv-slope">スロープ (逆)</option>
+            <option value="inv-slope-h2">スロープ (逆・高)</option>
+            <option value="cylinder">円柱</option>
+            <option value="jumper">ジャンパー (1点)</option>
+            <option value="1x3-2s">1x3 (2点ボッチ)</option>
+            <option value="flat">フラット (ポッチなし)</option>
+        </select>
+    </div>
+
+    <!-- Height Panel -->
+    <div id="panel-height" class="slide-panel">
+        <div class="group-label">高さ調整 (H)</div>
+        <div class="height-controls" style="justify-content:center; gap:30px; padding:10px 0;">
+            <button class="h-btn" id="m-btn-h-down"
+                style="width:60px; height:60px; font-size:1.8rem; border-radius:30px;">−</button>
+            <span id="m-label-h" style="font-size:1.8rem; min-width:80px; text-align:center; font-weight:bold;">H:
+                0</span>
+            <button class="h-btn" id="m-btn-h-up"
+                style="width:60px; height:60px; font-size:1.8rem; border-radius:30px;">+</button>
+        </div>
+        <div class="divider" style="width:100%; height:1px; margin:10px 0;"></div>
+        <label
+            style="font-size:1rem; cursor:pointer; display:flex; align-items:center; gap:12px; justify-content:center; padding:15px;">
+            <input type="checkbox" id="m-check-half-snap" style="width:22px; height:22px;"> <strong>ハーフスナップ
+                (0.5刻み)</strong>
+        </label>
+    </div>
+
+    <!-- Settings Panel -->
+    <div id="panel-settings" class="slide-panel">
+        <div class="group-label">プロジェクト & 設定</div>
+        <div style="display:grid; grid-template-columns: 1fr 1fr; gap:12px;">
+            <button class="action-btn" id="m-btn-open-project">保存・読込</button>
+            <button class="action-btn" id="m-btn-open-layers">レイヤー設定</button>
+            <button class="action-btn" id="m-btn-open-lighting">照明設定</button>
+            <button class="action-btn accent" id="m-btn-view"
+                style="background:var(--accent); color:#000;">鑑賞モード</button>
+        </div>
+        <div class="divider" style="width:100%; height:1px; margin:10px 0;"></div>
+        <button class="action-btn danger" id="m-btn-clear"
+            style="width:100%; justify-content:center; font-weight:bold; height:45px;">すべてのブロックを削除</button>
+    </div>
+
     <script src="https://unpkg.com/three@0.146.0/build/three.min.js"></script>
     <script src="https://unpkg.com/three@0.146.0/examples/js/controls/OrbitControls.js"></script>
     <script src="https://unpkg.com/three@0.146.0/examples/js/exporters/GLTFExporter.js"></script>
@@ -1009,6 +1198,7 @@
         let isHalfSnap = false;
         let isClear = false;
         let canPlace = true;
+        let isDeleteModeMobile = false; // For mobile toggle
 
         function init() {
             scene = new THREE.Scene();
@@ -1076,6 +1266,39 @@
             window.addEventListener('keydown', onKeyDown);
             window.addEventListener('mouseup', onMouseUp);
             window.addEventListener('contextmenu', (e) => e.preventDefault());
+
+            // --- Mobile Touch Handlers ---
+            let touchStartTime = 0;
+            let touchStartX = 0;
+            let touchStartY = 0;
+
+            renderer.domElement.addEventListener('touchstart', (e) => {
+                if (e.touches.length > 1) return;
+                touchStartTime = Date.now();
+                touchStartX = e.touches[0].clientX;
+                touchStartY = e.touches[0].clientY;
+                // For ghost block update
+                onMouseMove({ clientX: touchStartX, clientY: touchStartY });
+            }, { passive: false });
+
+            renderer.domElement.addEventListener('touchend', (e) => {
+                const duration = Date.now() - touchStartTime;
+                const endX = e.changedTouches[0].clientX;
+                const endY = e.changedTouches[0].clientY;
+                const dist = Math.sqrt((endX - touchStartX) ** 2 + (endY - touchStartY) ** 2);
+
+                if (duration < 300 && dist < 10) {
+                    // It's a tap!
+                    const fakeEvent = {
+                        clientX: endX,
+                        clientY: endY,
+                        button: isDeleteModeMobile ? 2 : 0, // 2 = Right Click (Delete)
+                        preventDefault: () => { },
+                        target: renderer.domElement
+                    };
+                    onMouseDown(fakeEvent);
+                }
+            }, { passive: false });
 
             createGhostBlock();
             animate();
@@ -1351,32 +1574,35 @@
             }
         }
         function renderPalette() {
-            const container = document.querySelector('.color-palette');
-            const addBtn = document.getElementById('btn-add-color');
-            container.querySelectorAll('.color-swatch').forEach(s => s.remove());
+            const containers = document.querySelectorAll('.palette-container');
+            containers.forEach(container => {
+                const addBtn = container.querySelector('#btn-add-color') || container.querySelector('#m-btn-add-color-open');
+                container.querySelectorAll('.color-swatch').forEach(s => s.remove());
 
-            currentPalette.forEach((colorObj) => {
-                const s = document.createElement('div');
-                s.className = 'color-swatch';
-                if (colorObj.hex === selectedColor.hex && colorObj.isClear === selectedColor.isClear) {
-                    s.classList.add('active');
-                }
-                if (colorObj.isClear) s.classList.add('is-clear');
+                currentPalette.forEach((colorObj) => {
+                    const s = document.createElement('div');
+                    s.className = 'color-swatch';
+                    if (colorObj.hex === selectedColor.hex && colorObj.isClear === selectedColor.isClear) {
+                        s.classList.add('active');
+                    }
+                    if (colorObj.isClear) s.classList.add('is-clear');
 
-                s.style.backgroundColor = colorObj.hex;
-                s.onclick = () => {
-                    selectedColor = colorObj;
-                    renderPalette();
-                    createGhostBlock();
-                };
+                    s.style.backgroundColor = colorObj.hex;
+                    s.onclick = () => {
+                        selectedColor = colorObj;
+                        renderPalette();
+                        createGhostBlock();
+                    };
 
-                s.oncontextmenu = (e) => {
-                    e.preventDefault();
-                    e.stopPropagation();
-                    showContextMenu(e.clientX, e.clientY, colorObj);
-                };
+                    s.oncontextmenu = (e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        showContextMenu(e.clientX, e.clientY, colorObj);
+                    };
 
-                container.insertBefore(s, addBtn);
+                    if (addBtn) container.insertBefore(s, addBtn);
+                    else container.appendChild(s);
+                });
             });
         }
 
@@ -1386,6 +1612,49 @@
             const checkEditClear = document.getElementById('check-edit-clear');
             const btnApplyColor = document.getElementById('btn-apply-color');
 
+            // --- Mobile Panel Logic ---
+            const panels = document.querySelectorAll('.slide-panel');
+            const backdrop = document.getElementById('panel-backdrop');
+
+            function closeAllPanels() {
+                panels.forEach(p => p.classList.remove('open'));
+                backdrop.style.display = 'none';
+            }
+
+            function toggleSlidePanel(id) {
+                const p = document.getElementById(id);
+                const isOpen = p.classList.contains('open');
+                closeAllPanels();
+                if (!isOpen) {
+                    p.classList.add('open');
+                    backdrop.style.display = 'block';
+                }
+            }
+
+            backdrop.onclick = closeAllPanels;
+            document.getElementById('tb-color').onclick = () => toggleSlidePanel('panel-colors');
+            document.getElementById('tb-shape').onclick = () => toggleSlidePanel('panel-shapes');
+            document.getElementById('tb-height').onclick = () => toggleSlidePanel('panel-height');
+            document.getElementById('tb-settings').onclick = () => toggleSlidePanel('panel-settings');
+            document.getElementById('tb-rotate-direct').onclick = () => {
+                rotationAngle = (rotationAngle + 90) % 360;
+                createGhostBlock();
+            };
+
+            const tbTrash = document.getElementById('tb-trash');
+            tbTrash.onclick = () => {
+                isDeleteModeMobile = !isDeleteModeMobile;
+                tbTrash.style.color = isDeleteModeMobile ? '#ff4d4d' : '#fff';
+                tbTrash.style.borderColor = isDeleteModeMobile ? '#ff4d4d' : 'var(--glass-border)';
+                createGhostBlock(); // Refresh ghost block color to red if deleting?
+            };
+
+            document.getElementById('m-btn-add-color-open').onclick = () => {
+                closeAllPanels();
+                document.getElementById('btn-add-color').click();
+            };
+
+            // --- Palette and Shapes ---
             document.getElementById('btn-add-color').onclick = () => {
                 isEditingMode = false;
                 document.getElementById('color-edit-title').textContent = "カラー追加";
@@ -1418,43 +1687,73 @@
 
             renderPalette();
 
-            const shapesGrid = document.querySelector('.shapes-grid');
-            SHAPES.forEach(shape => {
-                const b = document.createElement('div');
-                b.className = 'shape-btn' + (shape.id === selectedShape.id ? ' active' : '');
-                b.textContent = shape.id;
-                b.onclick = () => {
-                    document.querySelectorAll('.shape-btn').forEach(x => x.classList.remove('active'));
-                    b.classList.add('active');
-                    if (shape.id === 'カスタム') {
-                        selectedShape = { id: 'custom', w: parseInt(document.getElementById('input-w').value), d: parseInt(document.getElementById('input-d').value) };
-                    } else {
-                        selectedShape = shape;
-                        document.getElementById('input-w').value = shape.w;
-                        document.getElementById('input-d').value = shape.d;
+            const renderShapes = () => {
+                const grids = document.querySelectorAll('.shapes-grid');
+                grids.forEach(grid => {
+                    grid.innerHTML = '';
+                    SHAPES.forEach(shape => {
+                        const b = document.createElement('div');
+                        b.className = 'shape-btn' + (shape.id === selectedShape.id ? ' active' : '');
+                        b.textContent = shape.id;
+                        b.onclick = () => {
+                            document.querySelectorAll('.shape-btn').forEach(x => x.classList.remove('active'));
+                            b.classList.add('active');
+                            if (shape.id === 'カスタム') {
+                                const w = parseInt(document.getElementById('input-w').value);
+                                const d = parseInt(document.getElementById('input-d').value);
+                                selectedShape = { id: 'custom', w, d };
+                            } else {
+                                selectedShape = shape;
+                                document.getElementById('input-w').value = document.getElementById('m-input-w').value = shape.w;
+                                document.getElementById('input-d').value = document.getElementById('m-input-d').value = shape.d;
+                            }
+                            createGhostBlock();
+                            // If mobile, close after selection? Maybe keep open for adjustments
+                        };
+                        grid.appendChild(b);
+                    });
+                });
+            };
+            renderShapes();
+
+            // Sync inputs between PC and mobile
+            const syncInputs = (pcId, mId, prop, isInt = true) => {
+                const pcEl = document.getElementById(pcId);
+                const mEl = document.getElementById(mId);
+                const update = (srcEl) => {
+                    const val = isInt ? parseInt(srcEl.value) : srcEl.value;
+                    pcEl.value = mEl.value = val;
+                    if (prop === 'w' || prop === 'd') {
+                        selectedShape = { id: 'custom', w: parseInt(pcEl.value), d: parseInt(mEl.value) };
+                        document.querySelectorAll('.shape-btn').forEach(x => x.classList.remove('active'));
+                        document.querySelectorAll('.shape-btn:last-child').forEach(x => x.classList.add('active'));
+                    } else if (prop === 'type') {
+                        selectedType = pcEl.value;
                     }
                     createGhostBlock();
                 };
-                shapesGrid.appendChild(b);
-            });
-
-            document.getElementById('input-w').oninput = document.getElementById('input-d').oninput = document.getElementById('select-type').onchange = () => {
-                selectedShape = { id: 'custom', w: parseInt(document.getElementById('input-w').value), d: parseInt(document.getElementById('input-d').value) };
-                selectedType = document.getElementById('select-type').value;
-                document.querySelectorAll('.shape-btn').forEach(x => x.classList.remove('active'));
-                document.querySelector('.shape-btn:last-child').classList.add('active');
-                createGhostBlock();
+                pcEl.oninput = pcEl.onchange = () => update(pcEl);
+                if (mEl) mEl.oninput = mEl.onchange = () => update(mEl);
             };
 
+            syncInputs('input-w', 'm-input-w', 'w');
+            syncInputs('input-d', 'm-input-d', 'd');
+            syncInputs('select-type', 'm-select-type', 'type', false);
+
+            const labelH = document.getElementById('label-h');
+            const mLabelH = document.getElementById('m-label-h');
             const updateH = (v) => {
                 currentHeight = Math.max(0, currentHeight + v);
-                document.getElementById('label-h').textContent = `H: ${currentHeight}`;
+                labelH.textContent = mLabelH.textContent = `H: ${currentHeight}`;
                 heightGuide.position.y = currentHeight * HEIGHT_UNIT;
                 updateLayerVisibility();
             };
-            document.getElementById('btn-h-up').onclick = () => updateH(1);
-            document.getElementById('btn-h-down').onclick = () => updateH(-1);
-            document.getElementById('check-half-snap').onchange = (e) => isHalfSnap = e.target.checked;
+            document.getElementById('btn-h-up').onclick = document.getElementById('m-btn-h-up').onclick = () => updateH(1);
+            document.getElementById('btn-h-down').onclick = document.getElementById('m-btn-h-down').onclick = () => updateH(-1);
+
+            const checkSnap = document.getElementById('check-half-snap');
+            const mCheckSnap = document.getElementById('m-check-half-snap');
+            checkSnap.onchange = mCheckSnap.onchange = (e) => isHalfSnap = checkSnap.checked = mCheckSnap.checked = e.target.checked;
             document.getElementById('check-layer-mode').onchange = (e) => { isLayerEditMode = e.target.checked; updateLayerVisibility(); };
             document.getElementById('btn-layer-insert').onclick = () => { if (confirm("現在選択中の高さにあるブロックを1段上に押し上げて、ここに空欄を作りますか？")) insertLayer(); };
             document.getElementById('btn-layer-delete').onclick = () => { if (confirm("現在のレイヤーを削除し、上の段を下げますか？")) deleteLayer(); };
@@ -1489,24 +1788,25 @@
                 }
             }
 
-            document.getElementById('btn-open-lighting').onclick = () => toggleModal('modal-lighting');
+            document.getElementById('btn-open-lighting').onclick = document.getElementById('m-btn-open-lighting').onclick = () => { closeAllPanels(); toggleModal('modal-lighting'); };
             document.getElementById('btn-close-lighting').onclick = () => document.getElementById('modal-lighting').style.display = 'none';
 
-            document.getElementById('btn-open-layers').onclick = () => toggleModal('modal-layers');
+            document.getElementById('btn-open-layers').onclick = document.getElementById('m-btn-open-layers').onclick = () => { closeAllPanels(); toggleModal('modal-layers'); };
             document.getElementById('btn-close-layers').onclick = () => document.getElementById('modal-layers').style.display = 'none';
 
-            document.getElementById('btn-open-project').onclick = () => toggleModal('modal-project');
+            document.getElementById('btn-open-project').onclick = document.getElementById('m-btn-open-project').onclick = () => { closeAllPanels(); toggleModal('modal-project'); };
             document.getElementById('btn-close-project').onclick = () => document.getElementById('modal-project').style.display = 'none';
 
             document.getElementById('btn-rotate').onclick = () => { rotationAngle = (rotationAngle + 90) % 360; createGhostBlock(); };
-            document.getElementById('btn-clear').onclick = () => {
+            document.getElementById('btn-clear').onclick = document.getElementById('m-btn-clear').onclick = () => {
                 if (confirm("すべてのブロックを削除しますか？")) {
                     while (blocksContainer.children.length > 0) blocksContainer.remove(blocksContainer.children[0]);
                     updateLightPositions();
+                    closeAllPanels();
                 }
             };
             document.getElementById('btn-screenshot').onclick = () => { const a = document.createElement('a'); a.download = 'render.png'; a.href = renderer.domElement.toDataURL(); a.click(); };
-            document.getElementById('btn-view-mode').onclick = () => toggleViewMode(true);
+            document.getElementById('btn-view-mode').onclick = document.getElementById('m-btn-view').onclick = () => { closeAllPanels(); toggleViewMode(true); };
             document.getElementById('btn-exit-view').onclick = () => toggleViewMode(false);
 
             // Context Menu Items
