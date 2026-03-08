@@ -734,6 +734,24 @@
                 <button class="action-btn" id="btn-open-lighting">ライティング設定</button>
                 <button class="action-btn" id="btn-open-project">保存・読込</button>
                 <div class="divider"></div>
+                <div style="display:grid; grid-template-columns: 1fr 1fr; gap:5px; align-items: stretch;">
+                    <button class="action-btn" id="btn-undo" title="Ctrl+Z"
+                        style="justify-content: center; padding: 0.5rem;">
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                            stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                            <path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8" />
+                            <path d="M3 3v5h5" />
+                        </svg>
+                    </button>
+                    <button class="action-btn" id="btn-redo" title="Ctrl+Y"
+                        style="justify-content: center; padding: 0.5rem;">
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                            stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                            <path d="M21 12a9 9 0 1 1-9-9 9.75 9.75 0 0 1 6.74 2.74L21 8" />
+                            <path d="M21 3v5h-5" />
+                        </svg>
+                    </button>
+                </div>
                 <button class="action-btn danger" id="btn-clear">全クリア</button>
                 <button class="action-btn accent" id="btn-view-mode"
                     style="background: var(--accent); color: #000;">鑑賞モード</button>
@@ -874,6 +892,24 @@
             </div>
             <div class="divider" style="width:100%; height:1px; margin:5px 0;"></div>
             <div class="control-group">
+                <div class="group-label">キャンバスサイズ</div>
+                <div style="display:grid; grid-template-columns: 1fr 1fr; gap:10px; align-items:center;">
+                    <div style="display:flex; align-items:center; gap:5px;">
+                        <span style="font-size:0.75rem; opacity:0.6;">幅(W):</span>
+                        <input type="number" id="input-grid-w" value="20" min="1" max="100" class="numeric-input"
+                            style="flex:1;">
+                    </div>
+                    <div style="display:flex; align-items:center; gap:5px;">
+                        <span style="font-size:0.75rem; opacity:0.6;">奥行(D):</span>
+                        <input type="number" id="input-grid-d" value="20" min="1" max="100" class="numeric-input"
+                            style="flex:1;">
+                    </div>
+                </div>
+                <button class="action-btn" id="btn-apply-grid-size"
+                    style="margin-top:8px; width:100%; justify-content:center;">サイズ適用</button>
+            </div>
+            <div class="divider" style="width:100%; height:1px; margin:5px 0;"></div>
+            <div class="control-group">
                 <div class="group-label">書き出し</div>
                 <div style="display:grid; grid-template-columns: 1fr 1fr; gap:10px;">
                     <button class="action-btn" id="btn-screenshot">スクショ</button>
@@ -896,6 +932,20 @@
     <div id="bottom-toolbar">
         <div class="tb-btn" id="tb-color" title="カラー">🎨</div>
         <div class="tb-btn" id="tb-shape" title="形状">📐</div>
+        <div class="tb-btn" id="tb-undo" title="元に戻す">
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+                stroke-linecap="round" stroke-linejoin="round">
+                <path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8" />
+                <path d="M3 3v5h5" />
+            </svg>
+        </div>
+        <div class="tb-btn" id="tb-redo" title="やり直し">
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+                stroke-linecap="round" stroke-linejoin="round">
+                <path d="M21 12a9 9 0 1 1-9-9 9.75 9.75 0 0 1 6.74 2.74L21 8" />
+                <path d="M21 3v5h-5" />
+            </svg>
+        </div>
         <div class="tb-btn" id="tb-height" title="高さ">📏</div>
         <div class="tb-btn" id="tb-rotate-direct" title="回転">↻</div>
         <div class="tb-btn" id="tb-trash" title="削除モード">🗑️</div>
@@ -980,8 +1030,8 @@
     <script src="https://unpkg.com/three@0.146.0/examples/js/exporters/GLTFExporter.js"></script>
 
     <script>
-        const GRID_SIZE = 20;
-        const GRID_DIVISIONS = 20;
+        let gridW = 20;
+        let gridD = 20;
         const BLOCK_SIZE = 1;
         const HEIGHT_UNIT = 0.75;
         const DEFAULT_COLORS = [
@@ -1000,7 +1050,8 @@
         ];
 
         let scene, camera, renderer, controls;
-        let blocksContainer, ghostBlock, heightGuide;
+        let blocksContainer, ghostBlock, heightGuide, gridHelper;
+        let undoStack = [], redoStack = [];
         let raycaster, mouse;
         let ambientLight, sunLight;
         let nightLights = [];
@@ -1117,7 +1168,100 @@
             });
         }
 
+        // --- Undo/Redo System ---
+        function saveHistory() {
+            const state = blocksContainer.children.map(b => ({
+                c: b.userData.color,
+                s: b.userData.shape,
+                t: b.userData.type,
+                cl: b.userData.isClear || false,
+                p: b.position.toArray(),
+                r: b.rotation.toArray(),
+                y: b.userData.y
+            }));
+            undoStack.push(JSON.stringify(state));
+            if (undoStack.length > 50) undoStack.shift(); // Limit history
+            redoStack = []; // Clear redo on new action
+        }
+
+        function undo() {
+            if (undoStack.length === 0) return;
+            // Save current to redo
+            const currentState = blocksContainer.children.map(b => ({
+                c: b.userData.color,
+                s: b.userData.shape,
+                t: b.userData.type,
+                cl: b.userData.isClear || false,
+                p: b.position.toArray(),
+                r: b.rotation.toArray(),
+                y: b.userData.y
+            }));
+            redoStack.push(JSON.stringify(currentState));
+
+            const lastState = JSON.parse(undoStack.pop());
+            applyState(lastState);
+        }
+
+        function redo() {
+            if (redoStack.length === 0) return;
+            const state = JSON.parse(redoStack.pop());
+
+            // Save current to undo
+            const currentState = blocksContainer.children.map(b => ({
+                c: b.userData.color,
+                s: b.userData.shape,
+                t: b.userData.type,
+                cl: b.userData.isClear || false,
+                p: b.position.toArray(),
+                r: b.rotation.toArray(),
+                y: b.userData.y
+            }));
+            undoStack.push(JSON.stringify(currentState));
+
+            applyState(state);
+        }
+
+        function applyState(state) {
+            while (blocksContainer.children.length > 0) blocksContainer.remove(blocksContainer.children[0]);
+            state.forEach(d => {
+                const b = createBlockMesh(d.c, d.s, d.t, false, d.cl || false);
+                b.position.fromArray(d.p);
+                b.rotation.fromArray(d.r);
+                b.userData.y = d.y;
+                blocksContainer.add(b);
+            });
+            updateLightPositions();
+        }
+
+        function updateCanvasSize(w, d) {
+            gridW = w;
+            gridD = d;
+
+            // UI Sync
+            const inputW = document.getElementById('input-grid-w');
+            const inputD = document.getElementById('input-grid-d');
+            if (inputW) inputW.value = w;
+            if (inputD) inputD.value = d;
+
+            // Update Grid Helper
+            if (gridHelper) scene.remove(gridHelper);
+            // Since GridHelper is always square, we use the max dimension and divisions
+            const size = Math.max(w, d);
+            gridHelper = new THREE.GridHelper(size, size, 0x222225, 0x111113);
+            // If non-square, we could use a custom grid, but for now GridHelper is fine
+            // We just need to ensure the guide and placement logic use the actual w/d
+            scene.add(gridHelper);
+
+            // Update Height Guide
+            if (heightGuide) {
+                heightGuide.geometry.dispose();
+                heightGuide.geometry = new THREE.PlaneGeometry(w, d);
+                heightGuide.geometry.rotateX(-Math.PI / 2);
+            }
+        }
+
         function initBulkDrag(hitPoint) {
+            saveHistory(); // Save state before bulk movement starts
             isDraggingBulk = true;
             bulkDragStartPoint.copy(hitPoint);
             controls.enabled = false; // Lock camera
@@ -1158,6 +1302,7 @@
             initialBulkPositions = [];
         }
         function insertLayer() {
+            saveHistory();
             const h = currentHeight * HEIGHT_UNIT;
             const targetH = Math.max(0, h - HEIGHT_UNIT);
             const blocks = [...blocksContainer.children];
@@ -1172,6 +1317,7 @@
         }
 
         function deleteLayer() {
+            saveHistory();
             const h = currentHeight * HEIGHT_UNIT;
             const blocks = [...blocksContainer.children];
             // 1. Remove blocks exactly at current height
@@ -1224,14 +1370,13 @@
             controls.enableDamping = true;
             controls.dampingFactor = 0.05;
 
-            scene.add(new THREE.GridHelper(GRID_SIZE, GRID_DIVISIONS, 0x222225, 0x111113));
-
-            const guideGeo = new THREE.PlaneGeometry(GRID_SIZE, GRID_SIZE);
-            guideGeo.rotateX(-Math.PI / 2);
-            heightGuide = new THREE.Mesh(guideGeo, new THREE.MeshBasicMaterial({
+            // Initialize Grid and Guide
+            gridHelper = null;
+            heightGuide = new THREE.Mesh(new THREE.PlaneGeometry(1, 1), new THREE.MeshBasicMaterial({
                 color: 0x00d2ff, transparent: true, opacity: 0.15, side: THREE.DoubleSide
             }));
             scene.add(heightGuide);
+            updateCanvasSize(gridW, gridD);
 
             ambientLight = new THREE.AmbientLight(0xffffff, 0.5);
             scene.add(ambientLight);
@@ -1478,6 +1623,7 @@
             renderPalette();
             if (window.renderShapesMobile) window.renderShapesMobile();
 
+            saveHistory(); // Save state before removing block for pick-up
             // Remove the block
             blocksContainer.remove(block);
             updateLightPositions();
@@ -1498,7 +1644,7 @@
                 const bIsH2 = bType.endsWith('-h2');
                 const bH = bIsH2 ? HEIGHT_UNIT : HEIGHT_UNIT * 0.5;
 
-                if (['box', 'inv-slope', 'cylinder', 'jumper', '1x3-2s'].includes(bBaseType)) {
+                if (['box', 'inv-slope', 'cylinder', 'jumper', '1x3-2s', 'l-shape', 'l-shape-inv', 'box-45'].includes(bBaseType)) {
                     if (bBaseType === 'jumper') {
                         studs.push({ x: bPos.x, y: bPos.y + bH, z: bPos.z, type: bType, shape: bShape });
                     } else if (bBaseType === '1x3-2s') {
@@ -1527,6 +1673,13 @@
                         const d = rot ? bShape.w : bShape.d;
                         for (let i = 0; i < w; i++) {
                             for (let j = 0; j < d; j++) {
+                                // Proper L-shape check: 1st row (j=0) OR 1st column (i=0)
+                                if (bBaseType === 'l-shape' && (i !== 0 && j !== 0)) continue;
+                                // Inverted L-shape check: 1st row (j=0) OR last column (i=w-1)
+                                if (bBaseType === 'l-shape-inv' && (i !== w - 1 && j !== 0)) continue;
+                                // box-45 check: only (0,0) center stud
+                                if (bBaseType === 'box-45' && (i !== 0 || j !== 0)) continue;
+
                                 studs.push({
                                     x: bPos.x + (i - (w - 1) / 2),
                                     y: bPos.y + bH,
@@ -1589,7 +1742,7 @@
             if (type === 'box' || type === 'jumper' || type === 'flat' || type === '1x3-2s') {
                 geo = new THREE.BoxGeometry(w * BLOCK_SIZE, h, d * BLOCK_SIZE);
             } else if (type === 'cylinder') {
-                if (w === 1 && d === 1) {
+                if (w === d && (w === 1 || w === 2)) {
                     geo = new THREE.CylinderGeometry(w * BLOCK_SIZE / 2, w * BLOCK_SIZE / 2, h, 32);
                 } else {
                     const sP = new THREE.Shape();
@@ -1615,6 +1768,41 @@
                 else { p.moveTo(-0.5, 0.5); p.lineTo(0.5, 0.5); p.lineTo(0.5, -0.5); p.lineTo(-0.5, 0.5); }
                 geo = new THREE.ExtrudeGeometry(p, { depth: 1, bevelEnabled: false });
                 geo.center(); geo.rotateY(Math.PI / 2); geo.scale(w, h / BLOCK_SIZE, d);
+            } else if (type === 'l-shape') {
+                const sP = new THREE.Shape();
+                const hW = (w * BLOCK_SIZE) / 2;
+                const hD = (d * BLOCK_SIZE) / 2;
+                // Path for proper L-shape (thickness 1):
+                // (-hW, -hD) -> (hW, -hD) -> (hW, -hD+1) -> (-hW+1, -hD+1) -> (-hW+1, hD) -> (-hW, hD)
+                sP.moveTo(-hW, -hD);
+                sP.lineTo(hW, -hD);
+                sP.lineTo(hW, -hD + BLOCK_SIZE);
+                sP.lineTo(-hW + BLOCK_SIZE, -hD + BLOCK_SIZE);
+                sP.lineTo(-hW + BLOCK_SIZE, hD);
+                sP.lineTo(-hW, hD);
+                sP.closePath();
+                geo = new THREE.ExtrudeGeometry(sP, { depth: h, bevelEnabled: false });
+                geo.rotateX(Math.PI / 2);
+                geo.center();
+            } else if (type === 'l-shape-inv') {
+                const sP = new THREE.Shape();
+                const hW = (w * BLOCK_SIZE) / 2;
+                const hD = (d * BLOCK_SIZE) / 2;
+                // Path for Inverted L-shape (mirroring l-shape):
+                // (-hW, -hD) -> (hW, -hD) -> (hW, hD) -> (hW-1, hD) -> (hW-1, -hD+1) -> (-hW, -hD+1)
+                sP.moveTo(-hW, -hD);
+                sP.lineTo(hW, -hD);
+                sP.lineTo(hW, hD);
+                sP.lineTo(hW - BLOCK_SIZE, hD);
+                sP.lineTo(hW - BLOCK_SIZE, -hD + BLOCK_SIZE);
+                sP.lineTo(-hW, -hD + BLOCK_SIZE);
+                sP.closePath();
+                geo = new THREE.ExtrudeGeometry(sP, { depth: h, bevelEnabled: false });
+                geo.rotateX(Math.PI / 2);
+                geo.center();
+            } else if (type === 'box-45') {
+                geo = new THREE.BoxGeometry(w * BLOCK_SIZE, h, d * BLOCK_SIZE);
+                geo.rotateY(Math.PI / 4); // 45 degrees
             }
 
             const mesh = new THREE.Mesh(geo, mat);
@@ -1641,10 +1829,26 @@
                 } else {
                     for (let i = 0; i < w; i++) {
                         for (let j = 0; j < d; j++) {
+                            // Proper L-shape: 1st row (j=0) OR 1st column (i=0)
+                            if (type === 'l-shape' && i !== 0 && j !== 0) continue;
+                            // Inverted L-shape: 1st row (j=0) OR last column (i=w-1)
+                            if (type === 'l-shape-inv' && i !== w - 1 && j !== 0) continue;
+
                             const s = new THREE.Mesh(sGeo, mat.clone());
                             s.position.set((i - (w - 1) / 2) * BLOCK_SIZE, h + 0.08, (j - (d - 1) / 2) * BLOCK_SIZE);
                             s.castShadow = !isGhost; group.add(s);
                         }
+                    }
+                }
+            } else if (['l-shape', 'l-shape-inv', 'box-45'].includes(baseType)) {
+                for (let i = 0; i < w; i++) {
+                    for (let j = 0; j < d; j++) {
+                        if (baseType === 'l-shape' && i !== 0 && j !== 0) continue;
+                        if (baseType === 'l-shape-inv' && i !== w - 1 && j !== 0) continue;
+                        if (baseType === 'box-45' && (i !== 0 || j !== 0)) continue; // Only center for 1x1
+                        const s = new THREE.Mesh(sGeo, mat.clone());
+                        s.position.set((i - (w - 1) / 2) * BLOCK_SIZE, h + 0.08, (j - (d - 1) / 2) * BLOCK_SIZE);
+                        s.castShadow = !isGhost; group.add(s);
                     }
                 }
             } else if (baseType === 'jumper') {
@@ -1831,8 +2035,9 @@
                             document.querySelectorAll('.shape-btn').forEach(x => x.classList.remove('active'));
                             b.classList.add('active');
                             if (shape.id === 'カスタム') {
-                                const w = parseInt(document.getElementById('input-w').value);
-                                const d = parseInt(document.getElementById('input-d').value);
+                                // Get values from whichever input is visible/active (syncInputs keeps them identical)
+                                const w = parseInt(document.getElementById('m-input-w').value) || 1;
+                                const d = parseInt(document.getElementById('m-input-d').value) || 1;
                                 selectedShape = { id: 'custom', w, d };
                             } else {
                                 selectedShape = shape;
@@ -1853,13 +2058,36 @@
                 const mEl = document.getElementById(mId);
                 const update = (srcEl) => {
                     const val = isInt ? parseInt(srcEl.value) : srcEl.value;
-                    pcEl.value = mEl.value = val;
+                    pcEl.value = val;
+                    if (mEl) mEl.value = val;
+
                     if (prop === 'w' || prop === 'd') {
-                        selectedShape = { id: 'custom', w: parseInt(pcEl.value), d: parseInt(mEl.value) };
+                        const currentW = parseInt(pcEl.value) || 1;
+                        const currentD = (mEl ? parseInt(mEl.value) : parseInt(document.getElementById('input-d').value)) || 1;
+                        // Actually, just reading from PC elements is safest since they are always there and now synced
+                        const finalW = parseInt(document.getElementById('input-w').value) || 1;
+                        const finalD = parseInt(document.getElementById('input-d').value) || 1;
+                        selectedShape = { id: 'custom', w: finalW, d: finalD };
                         document.querySelectorAll('.shape-btn').forEach(x => x.classList.remove('active'));
                         document.querySelectorAll('.shape-btn:last-child').forEach(x => x.classList.add('active'));
                     } else if (prop === 'type') {
                         selectedType = pcEl.value;
+                        // Constraint: L-shapes require W,D >= 2
+                        if (selectedType === 'l-shape' || selectedType === 'l-shape-inv') {
+                            const wIn = document.getElementById('input-w');
+                            const dIn = document.getElementById('input-d');
+                            const mwIn = document.getElementById('m-input-w');
+                            const mdIn = document.getElementById('m-input-d');
+                            wIn.min = mwIn.min = dIn.min = mdIn.min = 2;
+                            if (parseInt(wIn.value) < 2) { wIn.value = mwIn.value = 2; selectedShape.w = 2; }
+                            if (parseInt(dIn.value) < 2) { dIn.value = mdIn.value = 2; selectedShape.d = 2; }
+                        } else {
+                            const wIn = document.getElementById('input-w');
+                            const dIn = document.getElementById('input-d');
+                            const mwIn = document.getElementById('m-input-w');
+                            const mdIn = document.getElementById('m-input-d');
+                            wIn.min = mwIn.min = dIn.min = mdIn.min = 1;
+                        }
                     }
                     createGhostBlock();
                 };
@@ -1874,6 +2102,24 @@
 
             syncInputs('input-w', 'm-input-w', 'w');
             syncInputs('input-d', 'm-input-d', 'd');
+
+            const pcSelectType = document.getElementById('select-type');
+            const mSelectType = document.getElementById('m-select-type');
+            const addLOption = (sel) => {
+                if (!sel) return;
+                let opt = document.createElement('option');
+                opt.value = 'l-shape'; opt.textContent = 'L字型';
+                sel.appendChild(opt);
+                opt = document.createElement('option');
+                opt.value = 'l-shape-inv'; opt.textContent = 'L字型(反転)';
+                sel.appendChild(opt);
+                opt = document.createElement('option');
+                opt.value = 'box-45'; opt.textContent = '1マス(45度)';
+                sel.appendChild(opt);
+            };
+            addLOption(pcSelectType);
+            addLOption(mSelectType);
+
             syncInputs('select-type', 'm-select-type', 'type', false);
 
             const labelH = document.getElementById('label-h');
@@ -1933,10 +2179,22 @@
             document.getElementById('btn-open-project').onclick = document.getElementById('m-btn-open-project').onclick = () => { closeAllPanels(); toggleModal('modal-project'); };
             document.getElementById('btn-close-project').onclick = () => document.getElementById('modal-project').style.display = 'none';
 
+            document.getElementById('btn-apply-grid-size').onclick = () => {
+                const w = parseInt(document.getElementById('input-grid-w').value);
+                const d = parseInt(document.getElementById('input-grid-d').value);
+                if (w > 0 && d > 0) {
+                    updateCanvasSize(w, d);
+                }
+            };
+
             document.getElementById('btn-rotate').onclick = () => { rotationAngle = (rotationAngle + 90) % 360; createGhostBlock(); };
+            document.getElementById('btn-undo').onclick = document.getElementById('tb-undo').onclick = () => undo();
+            document.getElementById('btn-redo').onclick = document.getElementById('tb-redo').onclick = () => redo();
             document.getElementById('btn-clear').onclick = document.getElementById('m-btn-clear').onclick = () => {
                 if (confirm("すべてのブロックを削除しますか？")) {
-                    while (blocksContainer.children.length > 0) blocksContainer.remove(blocksContainer.children[0]);
+                    saveHistory();
+                    blocksContainer.remove(...blocksContainer.children);
+                    updateCanvasSize(20, 20);
                     updateLightPositions();
                     closeAllPanels();
                 }
@@ -1972,8 +2230,15 @@
 
             document.getElementById('btn-save').onclick = () => {
                 const projectName = document.getElementById('input-project-name').value.trim().replace(/[^a-zA-Z0-9_\u3000-\u9FFF\u30A0-\u30FF\u3040-\u309F]/g, '_') || 'chicchanablock_project';
-                const proj = { name: projectName, palette: currentPalette, blocks: blocksContainer.children.map(b => ({ c: b.userData.color, s: b.userData.shape, t: b.userData.type, cl: b.userData.isClear || false, p: b.position.toArray(), r: b.rotation.toArray() })) };
-                const blob = new Blob([JSON.stringify(proj)], { type: 'application/json' });
+                const data = {
+                    v: 1.1,
+                    grid: { w: gridW, d: gridD },
+                    colors: currentPalette,
+                    blocks: blocksContainer.children.map(b => ({
+                        c: b.userData.color, s: b.userData.shape, t: b.userData.type, cl: b.userData.isClear || false, p: b.position.toArray(), r: b.rotation.toArray()
+                    }))
+                };
+                const blob = new Blob([JSON.stringify(data)], { type: 'application/json' });
                 const a = document.createElement('a'); a.download = `${projectName}.json`; a.href = URL.createObjectURL(blob); a.click();
             };
 
@@ -1987,6 +2252,12 @@
                     if (data.palette) {
                         // Data migration: if old format (string), convert to objects
                         currentPalette = data.palette.map(c => typeof c === 'string' ? { hex: c, isClear: false } : c);
+                    }
+                    if (data.colors) currentPalette = data.colors;
+                    if (data.grid) {
+                        updateCanvasSize(data.grid.w, data.grid.d);
+                    } else {
+                        updateCanvasSize(20, 20);
                     }
                     selectedColor = currentPalette[0] || DEFAULT_COLORS[0];
                     renderPalette();
@@ -2052,6 +2323,9 @@
             currentPalette = JSON.parse(JSON.stringify(DEFAULT_COLORS));
             selectedColor = currentPalette[1]; // default to black
             renderPalette();
+
+            // Reset Grid Size
+            updateCanvasSize(20, 20);
 
             // Reset UI state
             updateLayerVisibility();
@@ -2130,26 +2404,43 @@
                 const studs = getStudsInWorld();
                 const relevantLevelStuds = studs.filter(s => Math.abs(s.y - currentY + HEIGHT_UNIT * 0.5) < HEIGHT_UNIT * 0.6);
 
+                const testPosWithRail = (currentStud, railOff, fixOtherAxis = false) => {
+                    const testBx = currentStud.x - railOff;
+                    const testBz = fixOtherAxis ? currentStud.z : Math.round(pt.z / 0.5) * 0.5;
+                    const dist = Math.sqrt((testBx - pt.x) ** 2 + (testBz - pt.z) ** 2);
+                    if (dist < minDist) { minDist = dist; bestPos = new THREE.Vector3(testBx, currentY, testBz); }
+                };
+                const testPosWithRailZ = (currentStud, railOff, fixOtherAxis = false) => {
+                    const testBz = currentStud.z - railOff;
+                    const testBx = fixOtherAxis ? currentStud.x : Math.round(pt.x / 0.5) * 0.5;
+                    const dist = Math.sqrt((testBx - pt.x) ** 2 + (testBz - pt.z) ** 2);
+                    if (dist < minDist) { minDist = dist; bestPos = new THREE.Vector3(testBx, currentY, testBz); }
+                };
+
                 if (!isInvSlope) {
                     relevantLevelStuds.forEach(stud => {
+                        // 1. Center Snap (Perfect alignment) - Priority check
+                        if (eW > 1 || eD > 1) {
+                            const dist = Math.sqrt((stud.x - pt.x) ** 2 + (stud.z - pt.z) ** 2);
+                            if (dist < 0.3) { // High priority for center if very close
+                                minDist = dist - 0.5; // Artificial bias to prefer center
+                                bestPos = new THREE.Vector3(stud.x, currentY, stud.z);
+                            } else {
+                                testPosWithRail(stud, 0, true);
+                            }
+                        }
+
+                        // 2. Rail Snapping
                         if (!grooveInX) {
-                            // groove in Z (or square): rails in X
                             for (let i = 0; i < eW; i++) {
                                 const railOff = i - (eW - 1) / 2;
-                                const testBx = stud.x - railOff;
-                                const testBz = Math.round(pt.z / 0.5) * 0.5;
-                                const dist = Math.sqrt((testBx - pt.x) ** 2 + (testBz - pt.z) ** 2);
-                                if (dist < minDist) { minDist = dist; bestPos = new THREE.Vector3(testBx, currentY, testBz); }
+                                testPosWithRail(stud, railOff);
                             }
                         }
                         if (grooveInX || isSquare) {
-                            // groove in X (or square): rails in Z
                             for (let j = 0; j < eD; j++) {
                                 const railOff = j - (eD - 1) / 2;
-                                const testBz = stud.z - railOff;
-                                const testBx = Math.round(pt.x / 0.5) * 0.5;
-                                const dist = Math.sqrt((testBx - pt.x) ** 2 + (testBz - pt.z) ** 2);
-                                if (dist < minDist) { minDist = dist; bestPos = new THREE.Vector3(testBx, currentY, testBz); }
+                                testPosWithRailZ(stud, railOff);
                             }
                         }
                     });
@@ -2161,10 +2452,8 @@
                     const offInt = (v, eSize) => { const c = (eSize % 2 === 0) ? 0 : 0.5; return Math.round((v - c)) + c; };
                     const offHalf = (v) => Math.round(v / 0.5) * 0.5;
                     let fx, fz;
-                    // If no studs are nearby OR inv-slope, allow free 0.5 placement in both axes
                     const hasNearbyStuds = relevantLevelStuds.length > 0;
                     if (!hasNearbyStuds || isInvSlope) {
-                        // Free 0.5 snap in both directions
                         fx = offHalf(pt.x); fz = offHalf(pt.z);
                     } else if (baseBlock) {
                         const bX = baseBlock.position.x, bZ = baseBlock.position.z;
@@ -2185,25 +2474,58 @@
                 if (!isInvSlope) {
                     const ghostBx = ghostBlock.position.x;
                     const ghostBz = ghostBlock.position.z;
-                    const halfEW = eW / 2;
-                    const halfED = eD / 2;
 
-                    // Checks if stud fits in groove: 'groove' axis must have 0.5 clearance from block ends,
-                    // 'rail' axis must align with one of the actual rail columns (not necessarily integer)
-                    const fitsGroove = (rail, groove, eRail, eGroove) => {
-                        if (Math.abs(groove) > eGroove / 2 - 0.45) return false; // end-wall collision
-                        for (let ri = 0; ri < eRail; ri++) {
-                            const railPos = ri - (eRail - 1) / 2;
-                            if (Math.abs(rail - railPos) < 0.3) return true; // aligned with this rail
+                    const fitsGroove = (lx, lz, eRailW, eRailD) => {
+                        // END-WALL CHECK
+                        if (Math.abs(lx) > eRailW / 2 - 0.45 || Math.abs(lz) > eRailD / 2 - 0.45) return false;
+
+                        // CENTER SNAP PERMIT (Multi-stud blocks)
+                        if ((eRailW > 1 || eRailD > 1) && Math.abs(lx) < 0.2 && Math.abs(lz) < 0.2) return true;
+
+                        // L-SHAPE ALIGNMENT
+                        if (selectedType === 'l-shape') {
+                            const isRow0 = Math.abs(lz - (-(eRailD - 1) / 2)) < 0.3;
+                            const isCol0 = Math.abs(lx - (-(eRailW - 1) / 2)) < 0.3;
+                            return isRow0 || isCol0;
                         }
-                        return false; // not aligned with any rail
+                        if (selectedType === 'l-shape-inv') {
+                            const isRow0 = Math.abs(lz - (-(eRailD - 1) / 2)) < 0.3;
+                            const isColLast = Math.abs(lx - ((eRailW - 1) / 2)) < 0.3;
+                            return isRow0 || isColLast;
+                        }
+
+                        // RAIL ALIGNMENT CHECK
+                        // Determine which axis is the groove (the one we can slide along)
+                        const isLongD = eRailD > eRailW;
+                        const isLongW = eRailW > eRailD;
+                        const isSquareBlock = eRailW === eRailD;
+
+                        const checkAxis = (val, size) => {
+                            for (let ri = 0; ri < size; ri++) {
+                                const railPos = ri - (size - 1) / 2;
+                                if (Math.abs(val - railPos) < 0.3) return true;
+                            }
+                            return false;
+                        };
+
+                        if (isLongD) return checkAxis(lx, eRailW); // Groove is in D, check rails in W
+                        if (isLongW) return checkAxis(lz, eRailD); // Groove is in W, check rails in D
+                        if (isSquareBlock) return checkAxis(lx, eRailW) || checkAxis(lz, eRailD);
+                        return false;
                     };
 
                     relevantLevelStuds.forEach(stud => {
                         const lx = stud.x - ghostBx;
                         const lz = stud.z - ghostBz;
-                        // Ignore studs completely outside the block footprint
-                        if (Math.abs(lx) >= halfEW + 0.05 || Math.abs(lz) >= halfED + 0.05) return;
+
+                        const boundX = (gridW - eW) / 2;
+                        const boundZ = (gridD - eD) / 2;
+                        if (Math.round(Math.abs(ghostBx) * 100) / 100 > boundX + 0.01 || Math.round(Math.abs(ghostBz) * 100) / 100 > boundZ + 0.01) {
+                            isIllegal = true;
+                        }
+
+                        // Use eW/2 and eD/2 directly
+                        if (Math.abs(lx) >= eW / 2 + 0.05 || Math.abs(lz) >= eD / 2 + 0.05) return;
 
                         if (isSquare) {
                             const okA = fitsGroove(lx, lz, eW, eD); // groove in Z
@@ -2218,23 +2540,96 @@
                 }
 
                 let isCollision = false;
-                const gBody = ghostBlock.children[0];
-                const gB = new THREE.Box3().setFromObject(gBody);
-                gB.expandByScalar(-0.1); // Relaxed margin from 0.05 to 0.1 for easier mobile placement
+                const getCollisionBoxes = (obj) => {
+                    const type = obj.userData.type || selectedType;
+                    const w = obj.userData.w || selectedShape.w;
+                    const d = obj.userData.d || selectedShape.d;
+                    const h = obj.userData.h || (selectedType.endsWith('-h2') ? HEIGHT_UNIT : HEIGHT_UNIT * 0.5);
+                    const pos = obj.position;
+                    const rot = obj.rotation.y;
+
+                    if (type === 'l-shape' || type === 'l-shape-inv') {
+                        const boxes = [];
+                        const isInv = type === 'l-shape-inv';
+
+                        // Box 1: The "base" bar (always at the bottom-most row in local space)
+                        // Local center of 1xW bar: x=0, z=-(d-1)/2
+                        const box1 = new THREE.Box3(
+                            new THREE.Vector3(-w / 2 + 0.1, 0.1, -d / 2 + 0.1),
+                            new THREE.Vector3(w / 2 - 0.1, h - 0.1, -d / 2 + 1 - 0.1)
+                        );
+
+                        // Box 2: The "side" bar (thickness 1)
+                        // Local center of (D-1)x1 bar: x= -w/2 + 0.5 (normal) or w/2 - 0.5 (inv), z= from -d/2+1 to d/2
+                        let box2;
+                        if (!isInv) {
+                            box2 = new THREE.Box3(
+                                new THREE.Vector3(-w / 2 + 0.1, 0.1, -d / 2 + 1 + 0.1),
+                                new THREE.Vector3(-w / 2 + 1 - 0.1, h - 0.1, d / 2 - 0.1)
+                            );
+                        } else {
+                            box2 = new THREE.Box3(
+                                new THREE.Vector3(w / 2 - 1 + 0.1, 0.1, -d / 2 + 1 + 0.1),
+                                new THREE.Vector3(w / 2 - 0.1, h - 0.1, d / 2 - 0.1)
+                            );
+                        }
+
+                        // Function to transform local box to world space
+                        const transform = (box) => {
+                            const center = new THREE.Vector3();
+                            box.getCenter(center);
+                            const size = new THREE.Vector3();
+                            box.getSize(size);
+
+                            // Apply rotation to center
+                            center.applyAxisAngle(new THREE.Vector3(0, 1, 0), rot);
+                            center.add(pos);
+
+                            // For axis-aligned boxes after 90-degree rotations
+                            const isRotated = Math.round(rot / (Math.PI / 2)) % 2 !== 0;
+                            const finalSize = isRotated ? new THREE.Vector3(size.z, size.y, size.x) : size;
+
+                            return new THREE.Box3().setFromCenterAndSize(center, finalSize);
+                        };
+
+                        return [transform(box1), transform(box2)];
+                    } else if (type === 'box-45') {
+                        // For 45-degree block, we want it to block adjacent 1-unit positions.
+                        // Diagonal length of 1x1 is ~1.41. 
+                        // If we use a box size of ~1.3 (slightly larger than 1.0 but less than 1.41),
+                        // it will collide with blocks at distance 1.0 (adjacent) but not at distance 1.41 (diagonal).
+                        const b = new THREE.Box3();
+                        const halfS = 0.65; // Total diameter 1.3
+                        b.min.set(pos.x - halfS, pos.y + 0.1, pos.z - halfS);
+                        b.max.set(pos.x + halfS, pos.y + h - 0.1, pos.z + halfS);
+                        return [b];
+                    } else {
+                        const b = new THREE.Box3().setFromObject(obj.children[0] || obj);
+                        b.expandByScalar(-0.1);
+                        return [b];
+                    }
+                };
+
+                const gBoxes = getCollisionBoxes(ghostBlock);
 
                 const visibleBlocks = blocksContainer.children.filter(b => b.visible);
                 for (let i = 0; i < visibleBlocks.length; i++) {
                     const targetB = visibleBlocks[i];
                     if (targetB === ghostBlock) continue;
 
-                    const tBody = targetB.children[0];
-                    const tB = new THREE.Box3().setFromObject(tBody);
-                    tB.expandByScalar(-0.1); // Match the relaxation
+                    const tBoxes = getCollisionBoxes(targetB);
 
-                    if (gB.intersectsBox(tB)) {
-                        isCollision = true;
-                        break;
+                    // Check intersection between any ghost sub-box and any target sub-box
+                    for (const gb of gBoxes) {
+                        for (const tb of tBoxes) {
+                            if (gb.intersectsBox(tb)) {
+                                isCollision = true;
+                                break;
+                            }
+                        }
+                        if (isCollision) break;
                     }
+                    if (isCollision) break;
                 }
 
                 canPlace = !isIllegal && !isCollision;
@@ -2269,31 +2664,44 @@
             }
 
             if (e.button === 0 && ghostBlock.visible && canPlace) {
+                saveHistory(); // Save before action
                 const b = createBlockMesh(selectedColor.hex, selectedShape, selectedType, false, selectedColor.isClear);
                 b.position.copy(ghostBlock.position); b.rotation.copy(ghostBlock.rotation);
-                // Save Y in userData for future pickUpBlock calls
                 b.userData.y = ghostBlock.position.y;
                 blocksContainer.add(b);
                 updateLightPositions();
-                updateLayerVisibility(); // Ensure visibility is correct for new block
-            } else if (e.button === 2) {
+                updateLayerVisibility();
+            } else if (e.button === 2 || (isDeleteModeMobile && e.button === 0)) {
                 raycaster.setFromCamera(mouse, camera);
-                const visibleBlocks = blocksContainer.children.filter(b => b.visible);
                 const hits = raycaster.intersectObjects(visibleBlocks, true);
                 if (hits.length > 0) {
+                    saveHistory(); // Save before action
                     let o = hits[0].object;
                     while (o.parent !== blocksContainer) o = o.parent;
                     blocksContainer.remove(o);
                     updateLightPositions();
+                    updateLayerVisibility();
                 }
             }
         }
 
         function onKeyDown(e) {
             const k = e.key.toLowerCase();
-            if (k === 'r') document.getElementById('btn-rotate').click();
-            if (k === 'q') document.getElementById('btn-h-down').click();
-            if (k === 'e') document.getElementById('btn-h-up').click();
+            const isCtrl = e.ctrlKey || e.metaKey;
+
+            if (isCtrl && k === 'z') {
+                e.preventDefault();
+                undo();
+            } else if (isCtrl && (k === 'y' || (e.shiftKey && k === 'z'))) {
+                e.preventDefault();
+                redo();
+            } else if (k === 'r') {
+                document.getElementById('btn-rotate').click();
+            } else if (k === 'q') {
+                document.getElementById('btn-h-down').click();
+            } else if (k === 'e') {
+                document.getElementById('btn-h-up').click();
+            }
         }
 
         function animate() {
